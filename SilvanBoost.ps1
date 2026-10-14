@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 <#
-    SILVAN BOOST - FPS Optimizer  v2.4
+    SILVAN BOOST - FPS Optimizer  v2.5
     Scans any Windows 10/11 PC and adapts the optimizations to its hardware
     (NVIDIA / AMD / Intel GPUs, Intel / AMD CPUs, desktops and laptops, SSD / HDD).
 
@@ -16,7 +16,7 @@ param([switch]$NoElevate, [switch]$JustUpdated, [string]$LauncherPath)
 
 $ErrorActionPreference = 'Continue'
 $script:AppName    = 'Silvan Boost'
-$script:AppVersion = '2.4.0'
+$script:AppVersion = '2.5.0'
 
 # ------------------------------------------------------------------ elevation
 $wid = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -689,6 +689,16 @@ public static class SBLang {
 
 try { [void][SBNative]::ShowWindow([SBNative]::GetConsoleWindow(), 0) } catch { }
 try { Get-ChildItem -LiteralPath $PSScriptRoot -File | Unblock-File -ErrorAction SilentlyContinue } catch { }
+
+# ------------------------------------------------------------------ single instance
+$script:ShowEvent = $null
+try {
+    $script:AppMutex = New-Object System.Threading.Mutex($false, 'Global\SilvanBoostMainInstance')
+    $got = $false
+    try { $got = $AppMutex.WaitOne($(if ($JustUpdated) { 15000 } else { 0 })) } catch [System.Threading.AbandonedMutexException] { $got = $true }
+    $script:ShowEvent = New-Object System.Threading.EventWaitHandle($false, [System.Threading.EventResetMode]::AutoReset, 'Global\SilvanBoostShowWindow')
+    if (-not $got) { [void]$ShowEvent.Set(); exit }
+} catch { }
 
 # ------------------------------------------------------------------ state + logging
 $script:DataDir   = Join-Path $env:ProgramData 'SilvanBoost'
@@ -1949,6 +1959,7 @@ function Get-HW {
         $hw.GpuName = [string]$g.Name
         $hw.GpuShort = ($hw.GpuName -replace '^NVIDIA GeForce ', '')
         $hw.GpuDriver = [string]$g.DriverVersion
+        try { if ($g.DriverDate) { $hw.GpuDriverDate = [datetime]$g.DriverDate } } catch { }
     } catch { }
 
     $smi = $null
@@ -2107,6 +2118,15 @@ function Get-Recs($hw) {
     if (-not $hw.SysIsSSD) { AddRec 'warn' 'Windows is installed on a hard drive' 'Moving Windows and your games to an SSD is the biggest upgrade for loading times and stutter.' }
     if (-not $hw.Hags) { AddRec 'info' 'Hardware-accelerated GPU scheduling is off' 'Turn on the "Hardware-Accelerated GPU Scheduling" optimization and restart.' }
 
+    if ($hw.GpuDriverDate) {
+        $age = ((Get-Date) - $hw.GpuDriverDate).TotalDays
+        $ds = $hw.GpuDriverDate.ToString('yyyy-MM-dd')
+        $how = 'Get the newest driver from your graphics card or laptop maker.'
+        if ($hw.GpuName -match 'NVIDIA') { $how = 'Open the NVIDIA App, go to Drivers and click Download. If you had crashes, choose "Clean install".' }
+        elseif ($hw.GpuName -match 'AMD|Radeon') { $how = 'Open AMD Software: Adrenalin Edition and click Check for updates.' }
+        if ($age -gt 120) { AddRec 'warn' 'Update your graphics driver' (("Driver $($hw.GpuDriver) ($ds): {0:0} months old - newer drivers often bring FPS fixes for new games. " -f ($age / 30.4)) + $how) }
+        elseif ($age -ge 0) { AddRec 'ok' 'Graphics driver is up to date' "Driver $($hw.GpuDriver) from $ds." }
+    }
     if ($hw.GpuName -match 'AMD|Radeon') {
         AddRec 'info' ("AMD driver " + $hw.GpuDriver) 'Keep it current via AMD Software: Adrenalin Edition, and turn on Radeon Anti-Lag in games for lower input latency.'
     }
@@ -2850,6 +2870,12 @@ $Xaml = @'
                         <Ellipse x:Name="LiveDot" Width="7" Height="7" Fill="#FF8A1F" Margin="8,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
                       </StackPanel>
                     </RadioButton>
+                    <RadioButton x:Name="NavBench" Style="{StaticResource NavSub}">
+                      <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Benchmark" VerticalAlignment="Center"/>
+                        <Border CornerRadius="5" Background="#262ED47A" Padding="5,0" Margin="8,0,0,0" VerticalAlignment="Center"><TextBlock Text="NEW" FontSize="9" FontWeight="Bold" Foreground="#5BE39A"/></Border>
+                      </StackPanel>
+                    </RadioButton>
                   </StackPanel>
                 </Grid>
               </Border>
@@ -3554,6 +3580,18 @@ $Xaml = @'
                       </StackPanel>
                     </DockPanel>
                     <TextBlock x:Name="ProNote" Text="" Style="{StaticResource Sub}" Margin="0,8,0,0"/>
+                    <Border x:Name="ProCfgBar" CornerRadius="10" Background="#142ED47A" BorderBrush="#332ED47A" BorderThickness="1" Padding="14,10" Margin="0,12,0,0" Visibility="Collapsed">
+                      <DockPanel>
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                          <Button x:Name="BtnProCfgUndo" Style="{StaticResource GhostBtn}" Content="Undo" Padding="12,6" Margin="0,0,8,0" Visibility="Collapsed"/>
+                          <Button x:Name="BtnProCfgApply" Style="{StaticResource PrimaryBtn}" Content="Apply to game" Padding="14,6"/>
+                        </StackPanel>
+                        <StackPanel VerticalAlignment="Center">
+                          <TextBlock Text="Write these settings straight into the game" FontWeight="SemiBold" FontSize="13"/>
+                          <TextBlock x:Name="ProCfgTxt" Text="Your current game config is backed up first. Close the game before applying." FontSize="12" Foreground="#9AA5BF" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                        </StackPanel>
+                      </DockPanel>
+                    </Border>
                     <StackPanel x:Name="ProTable" Margin="0,18,0,0"/>
                   </StackPanel>
                 </Border>
@@ -3580,6 +3618,18 @@ $Xaml = @'
                   <TextBlock x:Name="LiveTitle" Text="Waiting for a game... Start any game from Game Presets and it is detected automatically." Style="{StaticResource Sub}"/>
                 </StackPanel>
               </DockPanel>
+              <Border Style="{StaticResource Card}" Margin="0,16,0,0" Padding="18,14">
+                <DockPanel>
+                  <CheckBox x:Name="AutoGameTg" DockPanel.Dock="Right" Style="{StaticResource Toggle}" VerticalAlignment="Center" Margin="14,0,0,0"/>
+                  <Border DockPanel.Dock="Left" Width="38" Height="38" CornerRadius="11" Background="#1AFF8A1F" VerticalAlignment="Center">
+                    <TextBlock Text="&#xE7FC;" FontFamily="{StaticResource IconFont}" FontSize="16" Foreground="#FF8A1F" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                  </Border>
+                  <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+                    <TextBlock Text="Auto game mode" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock Text="When a game starts, the game gets high priority, browsers and launchers in the background get low priority and downloads pause. Everything goes back when you close the game." FontSize="12" Foreground="#9AA5BF" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                  </StackPanel>
+                </DockPanel>
+              </Border>
               <UniformGrid Columns="4" Margin="0,18,0,0">
                 <Border Style="{StaticResource Card}" Margin="0,0,10,10" Padding="16,14">
                   <StackPanel>
@@ -3681,6 +3731,127 @@ $Xaml = @'
                   </Border>
                 </StackPanel>
               </Grid>
+              <Border Style="{StaticResource Card}" Margin="0,14,0,0">
+                <StackPanel>
+                  <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                      <Ellipse Width="8" Height="8" Fill="#FF8A1F" VerticalAlignment="Center"/>
+                      <TextBlock Text="Average FPS" FontSize="11.5" Foreground="#9AA5BF" Margin="6,0,14,0" VerticalAlignment="Center"/>
+                      <Ellipse Width="8" Height="8" Fill="#2ED47A" VerticalAlignment="Center"/>
+                      <TextBlock Text="1% low" FontSize="11.5" Foreground="#9AA5BF" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock Text="FPS history" Style="{StaticResource SectionTitle}"/>
+                  </DockPanel>
+                  <WrapPanel x:Name="HistChips" Margin="0,12,0,0"/>
+                  <TextBlock x:Name="HistInfo" Text="Play a game for at least one minute and your sessions show up here - so you can see if a game or driver update cost you FPS." FontSize="12.5" Foreground="#9AA5BF" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                  <Grid Height="170" Margin="0,12,0,0">
+                    <Canvas x:Name="HistCanvas" ClipToBounds="True" Background="Transparent"/>
+                  </Grid>
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+
+          <!-- BENCHMARK -->
+          <ScrollViewer x:Name="PageBench" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="28,6,28,24" MaxWidth="1080" HorizontalAlignment="Left">
+              <TextBlock Text="Before / after benchmark" Style="{StaticResource H1}"/>
+              <TextBlock Text="See what the boost really does: measure a game before and after, then share the result." Style="{StaticResource Sub}"/>
+              <UniformGrid Columns="3" Margin="0,20,0,0">
+                <Border x:Name="BenchStep1" Style="{StaticResource Card}" Margin="0,0,6,0" Padding="20,18">
+                  <DockPanel>
+                    <StackPanel DockPanel.Dock="Bottom" Margin="0,14,0,0">
+                      <Button x:Name="BtnBench1" Style="{StaticResource PrimaryBtn}" Content="Start measuring" HorizontalAlignment="Left"/>
+                      <TextBlock x:Name="BenchS1" Text="" FontSize="12" Foreground="#7F8BA6" Margin="0,10,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <StackPanel>
+                      <Border x:Name="BenchNum1" Width="32" Height="32" CornerRadius="16" Background="#24FF8A1F" BorderBrush="#59FF8A1F" BorderThickness="1" HorizontalAlignment="Left">
+                        <TextBlock x:Name="BenchNumTxt1" Text="1" FontWeight="Bold" FontSize="14" Foreground="#FFB36B" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                      </Border>
+                      <TextBlock Text="Measure before" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,0"/>
+                      <TextBlock Text="Click Start, then play your game for 2 minutes like you normally do." FontSize="12.5" Foreground="#9AA5BF" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+                <Border x:Name="BenchStep2" Style="{StaticResource Card}" Margin="6,0,6,0" Padding="20,18">
+                  <DockPanel>
+                    <StackPanel DockPanel.Dock="Bottom" Margin="0,14,0,0">
+                      <Button x:Name="BtnBench2" Style="{StaticResource GhostBtn}" Content="Open Quick Boost" HorizontalAlignment="Left"/>
+                      <TextBlock x:Name="BenchS2" Text="" FontSize="12" Foreground="#7F8BA6" Margin="0,10,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <StackPanel>
+                      <Border x:Name="BenchNum2" Width="32" Height="32" CornerRadius="16" Background="#24FF8A1F" BorderBrush="#59FF8A1F" BorderThickness="1" HorizontalAlignment="Left">
+                        <TextBlock x:Name="BenchNumTxt2" Text="2" FontWeight="Bold" FontSize="14" Foreground="#FFB36B" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                      </Border>
+                      <TextBlock Text="Boost" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,0"/>
+                      <TextBlock Text="Apply Quick Boost - Competitive is recommended. Then restart your PC." FontSize="12.5" Foreground="#9AA5BF" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+                <Border x:Name="BenchStep3" Style="{StaticResource Card}" Margin="6,0,0,0" Padding="20,18">
+                  <DockPanel>
+                    <StackPanel DockPanel.Dock="Bottom" Margin="0,14,0,0">
+                      <Button x:Name="BtnBench3" Style="{StaticResource PrimaryBtn}" Content="Start measuring" HorizontalAlignment="Left"/>
+                      <TextBlock x:Name="BenchS3" Text="" FontSize="12" Foreground="#7F8BA6" Margin="0,10,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <StackPanel>
+                      <Border x:Name="BenchNum3" Width="32" Height="32" CornerRadius="16" Background="#24FF8A1F" BorderBrush="#59FF8A1F" BorderThickness="1" HorizontalAlignment="Left">
+                        <TextBlock x:Name="BenchNumTxt3" Text="3" FontWeight="Bold" FontSize="14" Foreground="#FFB36B" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                      </Border>
+                      <TextBlock Text="Measure after" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,0"/>
+                      <TextBlock Text="Play the same game, same mode and same settings for 2 minutes." FontSize="12.5" Foreground="#9AA5BF" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+              </UniformGrid>
+              <Border x:Name="BenchLive" Style="{StaticResource Card}" Margin="0,14,0,0" Padding="20,16" Visibility="Collapsed">
+                <StackPanel>
+                  <DockPanel>
+                    <Button x:Name="BtnBenchStop" DockPanel.Dock="Right" Style="{StaticResource GhostBtn}" Content="Stop now" Padding="12,6"/>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                      <Ellipse x:Name="BenchDot" Width="9" Height="9" Fill="#2ED47A" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                      <TextBlock x:Name="BenchLiveTxt" Text="" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    </StackPanel>
+                  </DockPanel>
+                  <ProgressBar x:Name="BenchProg" Height="6" Margin="0,14,0,0" Minimum="0" Maximum="120" Value="0" Foreground="#FF8A1F" Background="#1A2440" BorderThickness="0"/>
+                  <TextBlock x:Name="BenchLiveSub" Text="" FontSize="12" Foreground="#7F8BA6" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                </StackPanel>
+              </Border>
+              <Border x:Name="BenchResult" Margin="0,14,0,0" CornerRadius="16" Background="#111A2E" BorderBrush="#26334F" BorderThickness="1" Padding="26,22" Visibility="Collapsed">
+                <StackPanel>
+                  <DockPanel>
+                    <TextBlock x:Name="BenchDate" DockPanel.Dock="Right" Text="" FontSize="12" Foreground="#7F8BA6" VerticalAlignment="Center"/>
+                    <StackPanel Orientation="Horizontal">
+                      <Border Width="30" Height="30" CornerRadius="9" VerticalAlignment="Center">
+                        <Border.Background>
+                          <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                            <GradientStop Color="#FFB347" Offset="0"/>
+                            <GradientStop Color="#FF6A00" Offset="1"/>
+                          </LinearGradientBrush>
+                        </Border.Background>
+                        <TextBlock Text="S" FontWeight="Black" FontSize="16" Foreground="#0A0F1C" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                      </Border>
+                      <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="SILVAN BOOST BENCHMARK" FontSize="11" FontWeight="Bold" Foreground="#FFB36B"/>
+                        <TextBlock x:Name="BenchGame" Text="" FontSize="18" FontWeight="SemiBold"/>
+                      </StackPanel>
+                    </StackPanel>
+                  </DockPanel>
+                  <UniformGrid x:Name="BenchTiles" Columns="3" Margin="0,18,0,0"/>
+                  <TextBlock x:Name="BenchVerdict" Text="" FontSize="14" Foreground="#C3CBDD" TextWrapping="Wrap" Margin="0,16,0,0"/>
+                  <TextBlock x:Name="BenchSpecs" Text="" FontSize="11.5" Foreground="#7F8BA6" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                </StackPanel>
+              </Border>
+              <StackPanel x:Name="BenchActions" Orientation="Horizontal" Margin="0,12,0,0" Visibility="Collapsed">
+                <Button x:Name="BtnBenchSave" Style="{StaticResource PrimaryBtn}" Content="Save as image"/>
+                <Button x:Name="BtnBenchReset" Style="{StaticResource GhostBtn}" Content="Start over" Margin="8,0,0,0"/>
+              </StackPanel>
+              <Border Style="{StaticResource Card}" Margin="0,14,0,0" Padding="18,14">
+                <StackPanel>
+                  <TextBlock Text="TIPS FOR A FAIR TEST" Style="{StaticResource Label}"/>
+                  <TextBlock Text="Use the same game, map or mode and the same in-game settings both times. Practice range or creative mode works best. Silvan Boost must stay open (minimized is fine). Measuring starts as soon as the game is detected - nothing is injected into the game." FontSize="12.5" Foreground="#A9B3CC" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                </StackPanel>
+              </Border>
             </StackPanel>
           </ScrollViewer>
 
@@ -4218,6 +4389,18 @@ $Xaml = @'
                 </Border>
               </UniformGrid>
               <Border Style="{StaticResource Card}" Margin="0,14,0,0">
+                <DockPanel>
+                  <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="BtnExport" Style="{StaticResource GhostBtn}" Content="Export my setup" Margin="0,0,8,0"/>
+                    <Button x:Name="BtnImport" Style="{StaticResource PrimaryBtn}" Content="Import a setup"/>
+                  </StackPanel>
+                  <StackPanel>
+                    <TextBlock Text="Share your setup" Style="{StaticResource SectionTitle}"/>
+                    <TextBlock Text="Save your optimizations and macros as a file and send it to a friend - they load it with one click. Only safe optimizations are imported, and a restore point is made first." Style="{StaticResource Sub}"/>
+                  </StackPanel>
+                </DockPanel>
+              </Border>
+              <Border Style="{StaticResource Card}" Margin="0,14,0,0">
                 <StackPanel>
                   <TextBlock Text="Activity log" Style="{StaticResource SectionTitle}"/>
                   <TextBlock x:Name="LogView" Text="" FontFamily="Consolas" FontSize="12" Foreground="#A9B3CC" Margin="0,10,0,0" TextWrapping="Wrap"/>
@@ -4266,6 +4449,24 @@ $Xaml = @'
                     <StackPanel>
                       <TextBlock Text="Beginner tour" FontWeight="SemiBold"/>
                       <TextBlock Text="Six short steps, about one minute. Also on the ? button up top." Foreground="#9AA5BF" FontSize="12" TextWrapping="Wrap"/>
+                    </StackPanel>
+                  </DockPanel>
+                </StackPanel>
+              </Border>
+              <Border Style="{StaticResource Card}" Margin="0,14,0,0">
+                <StackPanel>
+                  <DockPanel>
+                    <CheckBox x:Name="TrayTg" DockPanel.Dock="Right" Style="{StaticResource Toggle}" VerticalAlignment="Center"/>
+                    <StackPanel>
+                      <TextBlock Text="Keep running in the tray when closed" FontWeight="SemiBold"/>
+                      <TextBlock Text="The X button hides Silvan Boost next to the clock, so auto game mode, macros and the live monitor keep working. Right-click the tray icon to exit." Foreground="#9AA5BF" FontSize="12" TextWrapping="Wrap"/>
+                    </StackPanel>
+                  </DockPanel>
+                  <DockPanel Margin="0,16,0,0">
+                    <Button x:Name="BtnReport" DockPanel.Dock="Right" Style="{StaticResource GhostBtn}" Content="Report a problem" VerticalAlignment="Center"/>
+                    <StackPanel>
+                      <TextBlock Text="Something not working?" FontWeight="SemiBold"/>
+                      <TextBlock Text="Creates a short report (version, PC parts, activity log) on your desktop and copies it - send it to Silvan." Foreground="#9AA5BF" FontSize="12" TextWrapping="Wrap"/>
                     </StackPanel>
                   </DockPanel>
                 </StackPanel>
@@ -5321,6 +5522,7 @@ function Show-ProSettings([string]$id) {
     $ProNote.Text = $d.Note
     $BtnProOptimize.Visibility = $(if ($g) { 'Visible' } else { 'Collapsed' })
     $BtnProOpen.Visibility = $(if ($d.Kind -eq 'pro') { 'Visible' } else { 'Collapsed' })
+    try { Update-ProCfgBar $id } catch { }
     $ProTable.Children.Clear()
     $hdr = "<Grid $NS><Grid.ColumnDefinitions><ColumnDefinition Width=`"2*`"/><ColumnDefinition Width=`"2*`"/><ColumnDefinition Width=`"3*`"/></Grid.ColumnDefinitions>" +
         "<TextBlock Text=`"SETTING`" FontSize=`"11`" FontWeight=`"SemiBold`" Foreground=`"#7F8BA6`" Margin=`"0,0,12,8`"/>" +
@@ -5497,6 +5699,7 @@ function Start-LiveSession([string]$key) {
     $LiveDot.Fill = Get-Brush '#2ED47A'; $LiveDot.Visibility = 'Visible'
     Start-PresentMon $w.Exe
     try { Enter-GameNetMode } catch { Write-Log "Game network mode error: $_" }
+    try { Enter-AutoGameMode $w } catch { Write-Log "Auto game mode error: $_" }
     $LiveTitle.Text = "Monitoring $($w.Name) - started $((Get-Date).ToString('HH:mm'))"
     $LiveState.Text = 'LIVE'; $LiveStateBadge.Background = Get-Brush '#262ED47A'; $LiveState.Foreground = Get-Brush '#5BE39A'
     Write-Log "Live monitor: $($w.Name) detected, monitoring started."
@@ -5506,6 +5709,7 @@ function Start-LiveSession([string]$key) {
 function End-LiveSession {
     $s = $LiveSession; if (-not $s) { return }
     Stop-PresentMon
+    try { Exit-AutoGameMode } catch { }
     try { Exit-GameNetMode } catch { Write-Log "Game network mode error: $_" }
     $dur = (Get-Date) - $s.Start
     $avgFps = 0; if ($s.FpsN -gt 0) { $avgFps = $s.FpsSum / $s.FpsN }
@@ -5521,6 +5725,7 @@ function End-LiveSession {
         foreach ($p in $LiveProblems.Values) { [void]$lines.Add(" - $($p.Title)") }
     } else { [void]$lines.Add('No problems found - your PC handled this game well.') }
     $txt = $lines -join "`n"
+    try { Add-GameHistory $s $avgFps $avgLow $(if ($s.LatN -gt 0) { $s.LatSum / $s.LatN } else { 0 }) $dur.TotalMinutes; Build-History } catch { Write-Log "History error: $_" }
     $LiveLastText.Text = $txt
     $LiveLastCard.Visibility = 'Visible'
     Write-Log ("Live session report: " + ($lines -join ' | '))
@@ -5530,7 +5735,7 @@ function End-LiveSession {
     if ($LiveProblems.Count -eq 0) { $LiveDot.Visibility = 'Collapsed' }
     Set-Status "Live monitor: $($s.Name) closed - session report ready"
     if ($dur.TotalSeconds -ge 30) {
-        $NavLive.IsChecked = $true
+        if ($script:BenchRun -or $script:BenchFocus) { $script:BenchFocus = $false; $NavBench.IsChecked = $true } else { $NavLive.IsChecked = $true }
         try {
             if ($Window.WindowState -eq 'Minimized') { $Window.WindowState = 'Normal' }
             $Window.Activate() | Out-Null
@@ -7337,8 +7542,9 @@ function Invoke-NetFullReset {
 
 # ---- Game Network Mode: pause background downloads while a game runs
 $script:GameNetSvcs = @('BITS', 'DoSvc')
-function Enter-GameNetMode {
-    if ($State.misc['GameNetMode'] -ne $true) { return }
+function Enter-GameNetMode([switch]$Force) {
+    if ($script:GameNetSaved) { return }
+    if (-not $Force -and $State.misc['GameNetMode'] -ne $true) { return }
     $script:GameNetSaved = @{ Svcs = @(); OneDrive = $null }
     foreach ($n in $GameNetSvcs) {
         $s = Get-Service -Name $n -ErrorAction SilentlyContinue
@@ -7824,7 +8030,7 @@ function Update-Columns {
 }
 
 function Show-Page([string]$p) {
-    foreach ($n in 'Home', 'Scan', 'Quick', 'Tweaks', 'Games', 'Pro', 'Live', 'Ping', 'Input', 'Macros', 'Proc', 'Apps', 'Backup', 'About') {
+    foreach ($n in 'Home', 'Scan', 'Quick', 'Tweaks', 'Games', 'Pro', 'Live', 'Bench', 'Ping', 'Input', 'Macros', 'Proc', 'Apps', 'Backup', 'About') {
         $el = Get-Variable -Name "Page$n" -Scope Script -ValueOnly
         if ($n -eq $p) { $el.Visibility = 'Visible'; Invoke-AnimateIn $el } else { $el.Visibility = 'Collapsed' }
     }
@@ -7843,6 +8049,8 @@ function Show-Page([string]$p) {
     if ($p -eq 'Macros' -and $script:Started) { try { Open-MacrosPage } catch { Write-Log "Macros page error: $_" } }
     elseif ($script:MacroInit) { try { Stop-KeyCapture; if ([SBMacro]::Recording) { Stop-MacroRecording } } catch { } }
     if ([SBLang]::Lang -eq 'de') { try { [void][SBLang]::Apply($Window) } catch { } }
+    if ($p -eq 'Bench' -and $script:Started) { try { Update-BenchUI } catch { } }
+    if ($p -eq 'Live' -and $script:Started) { try { Build-History } catch { } }
     if ($p -eq 'Live') { $LiveDot.Visibility = $(if ($LiveSession) { 'Visible' } else { 'Collapsed' }) }
 }
 
@@ -7985,6 +8193,8 @@ function Start-Metrics {
         try { Update-Live } catch { Write-Log "Live monitor error: $_" }
         try { Update-Metrics } catch { }
         try { Update-AppJobs } catch { }
+        try { Update-Bench } catch { Write-Log "Benchmark error: $_" }
+        try { if ($ShowEvent -and $ShowEvent.WaitOne(0)) { Show-FromTray } } catch { }
         if ([SBLang]::Lang -eq 'de') { try { [void][SBLang]::Apply($Window) } catch { } }
         if ($Sync.DevDone) { $Sync.DevDone = $false; try { Complete-DeviceDetect } catch { Write-Log "Device detection error: $_" } }
         if ($Sync.ArtDone) { $Sync.ArtDone = $false; try { foreach ($gg in $Games) { Set-GameArt $gg } } catch { } }
@@ -8061,16 +8271,16 @@ function Invoke-Press($el, [double]$s) {
 $script:NavCats = @()
 $script:ActiveNav = 'NavHome'
 $script:NavOfPage = @{ Home = 'NavHome'; Scan = 'NavScan'; Quick = 'NavQuick'; Tweaks = 'NavTweaks'; Proc = 'NavProc'; Apps = 'NavApps'
-    Games = 'NavGames'; Pro = 'NavPro'; Live = 'NavLive'; Ping = 'NavPing'; Input = 'NavInput'; Macros = 'NavMacros'; Backup = 'NavBackup'; About = 'NavAbout' }
+    Games = 'NavGames'; Pro = 'NavPro'; Live = 'NavLive'; Bench = 'NavBench'; Ping = 'NavPing'; Input = 'NavInput'; Macros = 'NavMacros'; Backup = 'NavBackup'; About = 'NavAbout' }
 $script:CrumbOfPage = @{ Home = @('', 'Dashboard'); Scan = @('', 'PC Scan'); Quick = @('Optimize', 'Quick Boost'); Tweaks = @('Optimize', 'All Optimizations')
     Proc = @('Optimize', 'Processes'); Apps = @('Optimize', 'Apps'); Games = @('Gaming', 'Game Presets'); Pro = @('Gaming', 'Pro Settings')
-    Live = @('Gaming', 'Live Monitor'); Ping = @('Network & Input', 'Ping Booster'); Input = @('Network & Input', 'Input Lag'); Macros = @('Network & Input', 'Macros')
+    Live = @('Gaming', 'Live Monitor'); Bench = @('Gaming', 'Benchmark'); Ping = @('Network & Input', 'Ping Booster'); Input = @('Network & Input', 'Input Lag'); Macros = @('Network & Input', 'Macros')
     Backup = @('System', 'Backup & Restore'); About = @('System', 'Updates & About') }
 
 function Initialize-NavCats {
     $script:NavCats = @(
         @{ Btn = $CatOpt; Sub = $SubOpt; Items = $SubOptItems; Chev = $CatOptChev; Dot = $CatOptDot; Navs = @('NavQuick', 'NavTweaks', 'NavProc', 'NavApps'); Open = $false },
-        @{ Btn = $CatGame; Sub = $SubGame; Items = $SubGameItems; Chev = $CatGameChev; Dot = $CatGameDot; Navs = @('NavGames', 'NavPro', 'NavLive'); Open = $false },
+        @{ Btn = $CatGame; Sub = $SubGame; Items = $SubGameItems; Chev = $CatGameChev; Dot = $CatGameDot; Navs = @('NavGames', 'NavPro', 'NavLive', 'NavBench'); Open = $false },
         @{ Btn = $CatNet; Sub = $SubNet; Items = $SubNetItems; Chev = $CatNetChev; Dot = $CatNetDot; Navs = @('NavPing', 'NavInput', 'NavMacros'); Open = $false },
         @{ Btn = $CatSys; Sub = $SubSys; Items = $SubSysItems; Chev = $CatSysChev; Dot = $CatSysDot; Navs = @('NavBackup', 'NavAbout'); Open = $false }
     )
@@ -9973,6 +10183,85 @@ S	Beginner tour	Einsteiger-Tour
 S	Six short steps, about one minute. Also on the ? button up top.	Sechs kurze Schritte, etwa eine Minute. Auch \u00fcber den ?-Knopf oben.
 S	Help: show the tour	Hilfe: Tour anzeigen
 S	Change language	Sprache \u00e4ndern
+S	Before / after benchmark	Vorher/Nachher-Benchmark
+S	See what the boost really does: measure a game before and after, then share the result.	Sieh, was der Boost wirklich bringt: Miss ein Spiel vorher und nachher und teile das Ergebnis.
+S	Measure before	Vorher messen
+S	Click Start, then play your game for 2 minutes like you normally do.	Klicke auf Start und spiele dann 2 Minuten ganz normal.
+S	Start measuring	Messung starten
+S	Boost	Boosten
+S	Apply Quick Boost - Competitive is recommended. Then restart your PC.	Wende Quick Boost an - Competitive wird empfohlen. Starte danach deinen PC neu.
+S	Measure after	Nachher messen
+S	Play the same game, same mode and same settings for 2 minutes.	Spiele dasselbe Spiel, denselben Modus mit denselben Einstellungen 2 Minuten lang.
+S	Stop now	Jetzt stoppen
+S	Finish now	Jetzt beenden
+S	Cancel	Abbrechen
+S	Save as image	Als Bild speichern
+S	Start over	Neu beginnen
+S	Measure again	Neu messen
+S	TIPS FOR A FAIR TEST	TIPPS F\u00dcR EINEN FAIREN TEST
+S	Use the same game, map or mode and the same in-game settings both times. Practice range or creative mode works best. Silvan Boost must stay open (minimized is fine). Measuring starts as soon as the game is detected - nothing is injected into the game.	Nutze beide Male dasselbe Spiel, dieselbe Map oder denselben Modus und dieselben Ingame-Einstellungen. Am besten Schie\u00dfstand oder Kreativmodus. Silvan Boost muss offen bleiben (minimiert reicht). Die Messung startet, sobald das Spiel erkannt wird - es wird nichts ins Spiel injiziert.
+S	Measure "before" first.	Miss zuerst "vorher".
+S	Benchmark cancelled - at least 30 seconds of gameplay are needed.	Benchmark abgebrochen - mindestens 30 Sekunden Spielzeit sind n\u00f6tig.
+S	Before-measurement done. Now apply Quick Boost and restart your PC.	Vorher-Messung fertig. Wende jetzt Quick Boost an und starte deinen PC neu.
+S	Benchmark done - your result is ready.	Benchmark fertig - dein Ergebnis ist da.
+S	Please play the same game as before:	Bitte spiele dasselbe Spiel wie vorher:
+S	Game closed - start it again to continue	Spiel geschlossen - starte es erneut, um weiterzumachen
+S	Start your game now - measuring begins as soon as it is detected.	Starte jetzt dein Spiel - die Messung beginnt, sobald es erkannt wird.
+S	Waiting for frames from	Warte auf Bilder von
+S	Measuring	Messe
+S	Play normally - you can leave Silvan Boost minimized.	Spiel ganz normal - Silvan Boost kann minimiert bleiben.
+S	Do step 1 first.	Mach zuerst Schritt 1.
+S	Restart the game after boosting, ideally the whole PC.	Starte nach dem Boost das Spiel neu, am besten den ganzen PC.
+S	AVERAGE FPS	DURCHSCHNITT FPS
+S	Your PC runs this game better after the boost. Smoother 1% lows matter most - they are what you feel as stutter.	Dein PC l\u00e4uft mit diesem Spiel nach dem Boost besser. Am wichtigsten sind die 1% Lows - die sp\u00fcrst du als Ruckler.
+S	The result is lower than before. Make sure you tested the same scene and settings - or check the Live Monitor for problems.	Das Ergebnis ist schlechter als vorher. Pr\u00fcfe, ob du dieselbe Szene und Einstellungen getestet hast - oder schau im Live-Monitor nach Problemen.
+S	About the same as before - your PC was already well tuned. Check the PC Scanner for bigger wins like XMP or the monitor refresh rate.	Ungef\u00e4hr wie vorher - dein PC war schon gut eingestellt. Im PC-Scanner findest du gr\u00f6\u00dfere Hebel wie XMP oder die Bildwiederholrate.
+S	Image saved:	Bild gespeichert:
+S	Auto game mode	Automatischer Spielmodus
+S	When a game starts, the game gets high priority, browsers and launchers in the background get low priority and downloads pause. Everything goes back when you close the game.	Wenn ein Spiel startet, bekommt es hohe Priorit\u00e4t, Browser und Launcher im Hintergrund niedrige, und Downloads pausieren. Nach dem Spiel wird alles zur\u00fcckgestellt.
+S	Game mode on for	Spielmodus an f\u00fcr
+S	FPS history	FPS-Verlauf
+S	Average FPS	Durchschnitt FPS
+S	1% low	1% Low
+S	Play a game for at least one minute and your sessions show up here - so you can see if a game or driver update cost you FPS.	Spiel mindestens eine Minute, dann erscheinen deine Sessions hier - so siehst du, ob ein Spiel- oder Treiber-Update FPS gekostet hat.
+S	last:	zuletzt:
+S	vs. your average	zu deinem Schnitt
+S	Write these settings straight into the game	Diese Einstellungen direkt ins Spiel schreiben
+S	Your current game config is backed up first. Close the game before applying.	Deine aktuelle Spiel-Config wird vorher gesichert. Schlie\u00dfe das Spiel vor dem \u00dcbernehmen.
+S	Apply to game	Ins Spiel \u00fcbernehmen
+S	Settings file not found - start the game once, then come back.	Einstellungsdatei nicht gefunden - starte das Spiel einmal und komm dann zur\u00fcck.
+S	Pro settings applied. Undo brings back your old settings.	Pro-Einstellungen \u00fcbernommen. R\u00fcckg\u00e4ngig holt deine alten Einstellungen zur\u00fcck.
+S	Please close the game first - it overwrites its settings when it exits.	Bitte schlie\u00dfe zuerst das Spiel - es \u00fcberschreibt seine Einstellungen beim Beenden.
+S	The game settings file was not found. Start the game once, change any setting, close it - then try again.	Die Einstellungsdatei des Spiels wurde nicht gefunden. Starte das Spiel einmal, \u00e4ndere irgendeine Einstellung, schlie\u00dfe es - und versuche es dann erneut.
+S	Write the pro settings into the game config now?	Pro-Einstellungen jetzt in die Spiel-Config schreiben?
+S	Your current settings are backed up and can be restored with Undo.	Deine aktuellen Einstellungen werden gesichert und lassen sich mit R\u00fcckg\u00e4ngig wiederherstellen.
+S	pro settings written to the game config.	Pro-Einstellungen in die Spiel-Config geschrieben.
+S	{0} settings changed, {1} were already right.	{0} Einstellungen ge\u00e4ndert, {1} waren schon richtig.
+S	Resolution, display mode and Reflex can still be checked in the game menu.	Aufl\u00f6sung, Anzeigemodus und Reflex kannst du noch im Spielmen\u00fc pr\u00fcfen.
+S	your previous game settings are back.	deine vorherigen Spiel-Einstellungen sind zur\u00fcck.
+S	Share your setup	Setup teilen
+S	Save your optimizations and macros as a file and send it to a friend - they load it with one click. Only safe optimizations are imported, and a restore point is made first.	Speichere deine Optimierungen und Makros als Datei und schick sie einem Freund - er l\u00e4dt sie mit einem Klick. Es werden nur sichere Optimierungen \u00fcbernommen, und vorher wird ein Wiederherstellungspunkt erstellt.
+S	Export my setup	Mein Setup exportieren
+S	Import a setup	Setup importieren
+S	Setup saved:	Setup gespeichert:
+S	This is not a valid Silvan Boost setup file.	Das ist keine g\u00fcltige Silvan-Boost-Setup-Datei.
+S	Import this setup?	Dieses Setup importieren?
+S	{0} optimizations to turn on	{0} Optimierungen werden eingeschaltet
+S	{0} skipped (advanced or not suitable for this PC)	{0} \u00fcbersprungen (fortgeschritten oder nicht passend f\u00fcr diesen PC)
+S	{0} macro profiles, {1} macros	{0} Makro-Profile, {1} Makros
+S	Applying optimizations...	Optimierungen werden angewendet...
+S	Setup imported.	Setup importiert.
+S	Keep running in the tray when closed	Beim Schlie\u00dfen im Infobereich weiterlaufen
+S	The X button hides Silvan Boost next to the clock, so auto game mode, macros and the live monitor keep working. Right-click the tray icon to exit.	Das X versteckt Silvan Boost neben der Uhr, damit Spielmodus, Makros und Live-Monitor weiterlaufen. Zum Beenden Rechtsklick auf das Symbol.
+S	Report a problem	Problem melden
+S	Something not working?	Funktioniert etwas nicht?
+S	Creates a short report (version, PC parts, activity log) on your desktop and copies it - send it to Silvan.	Erstellt einen kurzen Bericht (Version, PC-Teile, Aktivit\u00e4tsprotokoll) auf deinem Desktop und kopiert ihn - schick ihn an Silvan.
+S	The report is on your desktop (SilvanBoost-Report.txt) and copied to the clipboard. Send it to Silvan and describe what went wrong.	Der Bericht liegt auf deinem Desktop (SilvanBoost-Report.txt) und ist kopiert. Schick ihn an Silvan und beschreib, was schiefging.
+S	Open Silvan Boost	Silvan Boost \u00f6ffnen
+S	Exit	Beenden
+S	Still running next to the clock. Right-click the icon to exit.	L\u00e4uft weiter neben der Uhr. Zum Beenden Rechtsklick auf das Symbol.
+S	Graphics driver is up to date	Grafiktreiber ist aktuell
+S	Update your graphics driver	Grafiktreiber aktualisieren
 P	^Not available: (.*)$	Nicht verf\u00fcgbar: $1
 P	^Not recommended: (.*)$	Nicht empfohlen: $1
 P	^You have the latest version \\((.*)\\) - checked (.*)\\.$	Du hast die neueste Version ($1) - gepr\u00fcft $2.
@@ -10015,6 +10304,10 @@ P	^jitter (\\S+) ms$	Jitter $1 ms
 P	^Idle ping: (\\S+) ms$	Ping im Leerlauf: $1 ms
 P	^Ping under load: (\\S+) ms  \\(\\+(\\S+) ms\\)$	Ping unter Last: $1 ms  (+$2 ms)
 P	^Download during test: (\\S+) Mbit/s$	Download beim Test: $1 Mbit/s
+P	^Driver (\\S+) \\((.+)\\): (\\d+) months old - newer drivers often bring FPS fixes for new games\\. Open the NVIDIA App, go to Drivers and click Download\\. If you had crashes, choose \\"Clean install\\"\\.$	Treiber $1 ($2): $3 Monate alt - neuere Treiber bringen oft FPS-Verbesserungen f\u00fcr neue Spiele. \u00d6ffne die NVIDIA App, geh zu Treiber und klicke auf Herunterladen. Wenn du Abst\u00fcrze hattest, w\u00e4hle "Neuinstallation".
+P	^Driver (\\S+) \\((.+)\\): (\\d+) months old - newer drivers often bring FPS fixes for new games\\. Open AMD Software: Adrenalin Edition and click Check for updates\\.$	Treiber $1 ($2): $3 Monate alt - neuere Treiber bringen oft FPS-Verbesserungen f\u00fcr neue Spiele. \u00d6ffne AMD Software: Adrenalin Edition und klicke auf Nach Updates suchen.
+P	^Driver (\\S+) \\((.+)\\): (\\d+) months old - newer drivers often bring FPS fixes for new games\\. Get the newest driver from your graphics card or laptop maker\\.$	Treiber $1 ($2): $3 Monate alt - neuere Treiber bringen oft FPS-Verbesserungen f\u00fcr neue Spiele. Hol dir den neuesten Treiber vom Hersteller deiner Grafikkarte oder deines Laptops.
+P	^Driver (\\S+) from (.+)\\.$	Treiber $1 vom $2.
 '@
 
 # ------------------------------------------------------------------ language + beginner tour
@@ -10267,6 +10560,611 @@ function Register-TourEvents {
             elseif ($TourBubble.Visibility -eq 'Visible' -and $e.Key -eq 'Left') { $e.Handled = $true; Show-TourStep ($TourIdx - 1) } })
 }
 
+# ------------------------------------------------------------------ 2.5: benchmark, game configs, tray, history, sharing, report
+# ---- before / after benchmark
+$script:BenchRun = $null
+$script:BenchFocus = $false
+$script:BenchSecs = 120
+
+function Get-BenchData {
+    $b = $State.misc['Bench']
+    if (-not ($b -is [hashtable])) { $b = @{}; $State.misc['Bench'] = $b }
+    $b
+}
+
+function Start-Bench([string]$phase) {
+    if ($BenchRun) { return }
+    $bd = Get-BenchData
+    if ($phase -eq 'after' -and -not ($bd.Before -is [hashtable])) { Show-Msg (L 'Measure "before" first.') | Out-Null; return }
+    if (-not $LiveAuto.IsChecked) { $LiveAuto.IsChecked = $true }
+    $script:BenchRun = @{ Phase = $phase; Fps = New-Object System.Collections.ArrayList; Low = New-Object System.Collections.ArrayList; Lat = New-Object System.Collections.ArrayList; Game = $null; GameId = $null }
+    $BenchLive.Visibility = 'Visible'; Invoke-AnimateIn $BenchLive 6 220
+    $BenchProg.Maximum = $BenchSecs; $BenchProg.Value = 0
+    $pulse = New-Anim 0.25 700 0 1; $pulse.AutoReverse = $true; $pulse.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+    $BenchDot.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $pulse)
+    Update-BenchUI
+    Write-Log "Benchmark ($phase) started."
+}
+
+function Stop-Bench([switch]$Cancel) {
+    $r = $BenchRun; if (-not $r) { return }
+    $script:BenchRun = $null
+    $BenchDot.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $null)
+    $BenchLive.Visibility = 'Collapsed'
+    if ($Cancel -or $r.Fps.Count -lt 30) {
+        Set-Status (L 'Benchmark cancelled - at least 30 seconds of gameplay are needed.')
+        Update-BenchUI; return
+    }
+    $avg = { param($l) if ($l.Count -eq 0) { 0.0 } else { [double](($l | Measure-Object -Average).Average) } }
+    $res = @{ Game = $r.Game; GameId = $r.GameId; Fps = (& $avg $r.Fps); Low = (& $avg $r.Low); Lat = (& $avg $r.Lat); Secs = $r.Fps.Count; Date = (Get-Date).ToString('yyyy-MM-dd HH:mm') }
+    $bd = Get-BenchData
+    if ($r.Phase -eq 'before') { $bd.Before = $res; $bd.Remove('After') } else { $bd.After = $res }
+    Save-State
+    Write-Log ("Benchmark {0}: {1} - {2:0} FPS avg, {3:0} 1% low, {4:0} ms latency ({5}s)" -f $r.Phase, $res.Game, $res.Fps, $res.Low, $res.Lat, $res.Secs)
+    $msg = $(if ($r.Phase -eq 'before') { 'Before-measurement done. Now apply Quick Boost and restart your PC.' } else { 'Benchmark done - your result is ready.' })
+    Set-Status (L $msg)
+    Show-TrayTip 'Silvan Boost' (L $msg)
+    $script:BenchFocus = $true
+    Update-BenchUI
+    if ($r.Phase -eq 'after') { Show-FromTray; $NavBench.IsChecked = $true }
+}
+
+function Update-Bench {
+    $r = $BenchRun; if (-not $r) { return }
+    $s = $LiveSession
+    if ($s) {
+        $bd = Get-BenchData
+        if ($r.Phase -eq 'after' -and $bd.Before.GameId -and $s.Id -and $s.Id -ne $bd.Before.GameId) {
+            $BenchLiveTxt.Text = (L 'Please play the same game as before:') + " $($bd.Before.Game)"
+            return
+        }
+        if (-not $r.Game) { $r.Game = $s.Name; $r.GameId = $s.Id }
+        $fps = [double]$Sync.Fps
+        if ($fps -gt 0) {
+            [void]$r.Fps.Add($fps)
+            if ([double]$Sync.Low1 -gt 0) { [void]$r.Low.Add([double]$Sync.Low1) }
+            if ([double]$Sync.InputLat -gt 0) { [void]$r.Lat.Add([double]$Sync.InputLat) }
+        }
+    }
+    Update-BenchUI
+    if ($r.Fps.Count -ge $BenchSecs) { Stop-Bench }
+}
+
+function Format-Delta([double]$before, [double]$after, [bool]$lowerBetter) {
+    if ($before -le 0 -or $after -le 0) { return @{ Text = '-'; Good = $null } }
+    $p = ($after - $before) / $before * 100
+    $good = $(if ($lowerBetter) { $p -lt -1 } else { $p -gt 1 })
+    $bad = $(if ($lowerBetter) { $p -gt 1 } else { $p -lt -1 })
+    $sign = $(if ($p -ge 0) { '+' } else { '' })
+    @{ Text = ('{0}{1:0}%' -f $sign, $p); Good = $(if ($good) { $true } elseif ($bad) { $false } else { $null }) }
+}
+
+function Update-BenchUI {
+    if (-not $script:BenchS1) { return }
+    $bd = Get-BenchData
+    $b = $bd.Before; $a = $bd.After
+    $r = $BenchRun
+    # live card
+    if ($r) {
+        $n = $r.Fps.Count
+        $BenchProg.Value = [Math]::Min($BenchSecs, $n)
+        if (-not $LiveSession) {
+            $BenchLiveTxt.Text = $(if ($n -gt 0) { (L 'Game closed - start it again to continue') + "  ($n / $BenchSecs s)" } else { L 'Start your game now - measuring begins as soon as it is detected.' })
+        } elseif ($n -eq 0) { $BenchLiveTxt.Text = (L 'Waiting for frames from') + " $($LiveSession.Name)..." }
+        else { $BenchLiveTxt.Text = (L 'Measuring') + " $($r.Game):  $n / $BenchSecs s" }
+        $BenchLiveSub.Text = $(if ($n -gt 0 -and [double]$Sync.Fps -gt 0) { '{0:0} FPS' -f [double]$Sync.Fps } else { L 'Play normally - you can leave Silvan Boost minimized.' })
+        $BtnBenchStop.Content = L $(if ($n -ge 30) { 'Finish now' } else { 'Cancel' })
+    }
+    # steps
+    $BtnBench1.IsEnabled = -not $r; $BtnBench3.IsEnabled = (-not $r) -and ($b -is [hashtable])
+    $BenchS1.Text = $(if ($b -is [hashtable]) { "$($b.Game): {0:0} FPS  -  $($b.Date)" -f [double]$b.Fps } else { '' })
+    $BenchS3.Text = $(if ($a -is [hashtable]) { "$($a.Game): {0:0} FPS  -  $($a.Date)" -f [double]$a.Fps } elseif (-not ($b -is [hashtable])) { L 'Do step 1 first.' } else { '' })
+    $BenchS2.Text = $(if ($b -is [hashtable] -and -not ($a -is [hashtable])) { L 'Restart the game after boosting, ideally the whole PC.' } else { '' })
+    $done = @(($b -is [hashtable]), ($a -is [hashtable]), ($a -is [hashtable]))
+    for ($i = 1; $i -le 3; $i++) {
+        $nb = Get-Variable -Name "BenchNum$i" -Scope Script -ValueOnly; $nt = Get-Variable -Name "BenchNumTxt$i" -Scope Script -ValueOnly
+        if ($done[$i - 1]) { $nb.Background = Get-Brush '#242ED47A'; $nb.BorderBrush = Get-Brush '#802ED47A'; $nt.Text = [string][char]0xE73E; $nt.FontFamily = $Window.FindResource('IconFont'); $nt.Foreground = Get-Brush '#2ED47A' }
+        else { $nb.Background = Get-Brush '#24FF8A1F'; $nb.BorderBrush = Get-Brush '#59FF8A1F'; $nt.Text = "$i"; $nt.FontFamily = New-Object System.Windows.Media.FontFamily('Segoe UI'); $nt.Foreground = Get-Brush '#FFB36B' }
+    }
+    $BtnBench1.Content = L $(if ($b -is [hashtable]) { 'Measure again' } else { 'Start measuring' })
+    $BtnBench3.Content = L $(if ($a -is [hashtable]) { 'Measure again' } else { 'Start measuring' })
+    # result
+    if (($b -is [hashtable]) -and ($a -is [hashtable])) {
+        $BenchResult.Visibility = 'Visible'; $BenchActions.Visibility = 'Visible'
+        $BenchGame.Text = [string]$a.Game
+        $BenchDate.Text = [string]$a.Date
+        $BenchTiles.Children.Clear()
+        $tiles = @(@('AVERAGE FPS', [double]$b.Fps, [double]$a.Fps, $false, '{0:0}'), @('1% LOW FPS', [double]$b.Low, [double]$a.Low, $false, '{0:0}'), @('PC LATENCY', [double]$b.Lat, [double]$a.Lat, $true, '{0:0} ms'))
+        $k = 0
+        foreach ($t in $tiles) {
+            $d = Format-Delta $t[1] $t[2] $t[3]
+            $col = $(if ($d.Good -eq $true) { '#2ED47A' } elseif ($d.Good -eq $false) { '#F87171' } else { '#C3CBDD' })
+            $bv = $(if ($t[1] -gt 0) { $t[4] -f $t[1] } else { 'n/a' }); $av = $(if ($t[2] -gt 0) { $t[4] -f $t[2] } else { 'n/a' })
+            $x = @"
+<Border $NS CornerRadius="12" Background="#0E1526" BorderBrush="#1E2A45" BorderThickness="1" Padding="16,14" Margin="$(if ($k -eq 0) { '0' } else { '5' }),0,$(if ($k -eq 2) { '0' } else { '5' }),0">
+  <StackPanel>
+    <TextBlock Text="$(X (L $t[0]))" FontSize="11" FontWeight="Bold" Foreground="#7F8BA6"/>
+    <TextBlock Text="$(X $d.Text)" FontSize="34" FontWeight="SemiBold" Foreground="$col" Margin="0,4,0,0" FontFamily="Segoe UI Variable Display, Segoe UI"/>
+    <TextBlock Text="$(X $bv)  &#x2192;  $(X $av)" FontSize="13" Foreground="#A9B3CC"/>
+  </StackPanel>
+</Border>
+"@
+            [void]$BenchTiles.Children.Add([System.Windows.Markup.XamlReader]::Parse($x)); $k++
+        }
+        $df = Format-Delta ([double]$b.Fps) ([double]$a.Fps) $false
+        $dl = Format-Delta ([double]$b.Low) ([double]$a.Low) $false
+        $BenchVerdict.Text = $(if ($df.Good -eq $true -or $dl.Good -eq $true) { L 'Your PC runs this game better after the boost. Smoother 1% lows matter most - they are what you feel as stutter.' }
+            elseif ($df.Good -eq $false) { L 'The result is lower than before. Make sure you tested the same scene and settings - or check the Live Monitor for problems.' }
+            else { L 'About the same as before - your PC was already well tuned. Check the PC Scanner for bigger wins like XMP or the monitor refresh rate.' })
+        $BenchSpecs.Text = "$($HW.CpuName)  |  $($HW.GpuName)  |  Silvan Boost $AppVersion"
+        [void][SBLang]::Apply($BenchResult)
+    } else { $BenchResult.Visibility = 'Collapsed'; $BenchActions.Visibility = 'Collapsed' }
+}
+
+function Save-BenchImage {
+    $el = $BenchResult
+    $el.UpdateLayout()
+    $w = [int][Math]::Ceiling($el.ActualWidth); $h = [int][Math]::Ceiling($el.ActualHeight)
+    if ($w -le 0 -or $h -le 0) { return }
+    $scale = 2.0
+    $bmp = New-Object System.Windows.Media.Imaging.RenderTargetBitmap([int]($w * $scale), [int]($h * $scale), 96 * $scale, 96 * $scale, [System.Windows.Media.PixelFormats]::Pbgra32)
+    $dv = New-Object System.Windows.Media.DrawingVisual
+    $dc = $dv.RenderOpen()
+    $dc.DrawRectangle((Get-Brush '#0A0F1C'), $null, [System.Windows.Rect]::new(0, 0, $w, $h))
+    $vb = New-Object System.Windows.Media.VisualBrush($el)
+    $dc.DrawRectangle($vb, $null, [System.Windows.Rect]::new(0, 0, $w, $h))
+    $dc.Close()
+    $bmp.Render($dv)
+    $dlg = New-Object Microsoft.Win32.SaveFileDialog
+    $dlg.Title = L 'Save as image'
+    $dlg.Filter = 'PNG (*.png)|*.png'
+    $dlg.FileName = 'SilvanBoost-Benchmark-' + (([string]$BenchGame.Text) -replace '[^A-Za-z0-9]+', '') + '.png'
+    $dlg.InitialDirectory = [Environment]::GetFolderPath('MyPictures')
+    if (-not $dlg.ShowDialog($Window)) { return }
+    $enc = New-Object System.Windows.Media.Imaging.PngBitmapEncoder
+    $enc.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($bmp))
+    $fs = [IO.File]::Create($dlg.FileName)
+    try { $enc.Save($fs) } finally { $fs.Close() }
+    Set-Status ((L 'Image saved:') + " $($dlg.FileName)")
+    try { Start-Process 'explorer.exe' -ArgumentList "/select,`"$($dlg.FileName)`"" } catch { }
+}
+
+# ---- FPS history per game
+function Add-GameHistory($s, [double]$fps, [double]$low, [double]$lat, [double]$mins) {
+    if (-not $s.Id -or $fps -le 0 -or $mins -lt 1) { return }
+    $h = $State.misc['History']
+    if (-not ($h -is [hashtable])) { $h = @{}; $State.misc['History'] = $h }
+    $g = $h[$s.Id]
+    if (-not ($g -is [hashtable])) { $g = @{ Name = [string]$s.Name; S = @() }; $h[$s.Id] = $g }
+    $g.Name = [string]$s.Name
+    $g.S = @(@($g.S | Where-Object { $_ -is [hashtable] }) + , @{ D = (Get-Date).ToString('yyyy-MM-dd HH:mm'); F = [Math]::Round($fps, 1); L = [Math]::Round($low, 1); T = [Math]::Round($lat, 1); M = [Math]::Round($mins) })
+    if ($g.S.Count -gt 60) { $g.S = @($g.S | Select-Object -Last 60) }
+    $script:HistSel = $s.Id
+    Save-State
+}
+
+$script:HistSel = $null
+function Build-History {
+    if (-not $script:HistChips) { return }
+    $h = $State.misc['History']
+    $HistChips.Children.Clear()
+    if (-not ($h -is [hashtable]) -or $h.Count -eq 0) { $HistCanvas.Children.Clear(); return }
+    if (-not $HistSel -or -not $h.ContainsKey($HistSel)) { $script:HistSel = @($h.Keys)[0] }
+    foreach ($id in @($h.Keys | Sort-Object { $h[$_].Name })) {
+        $rb = New-Object System.Windows.Controls.RadioButton
+        $rb.Content = "$($h[$id].Name)  $(@($h[$id].S).Count)"; $rb.GroupName = 'hist'; $rb.Tag = $id
+        $rb.Style = $Window.FindResource('Chip'); $rb.Margin = [System.Windows.Thickness]::new(0, 0, 8, 8)
+        if ($id -eq $HistSel) { $rb.IsChecked = $true }
+        $rb.Add_Checked({ param($sd, $e) $script:HistSel = [string]$sd.Tag; Draw-History })
+        [void]$HistChips.Children.Add($rb)
+    }
+    Draw-History
+}
+
+function Draw-History {
+    $HistCanvas.Children.Clear()
+    $h = $State.misc['History']; if (-not ($h -is [hashtable]) -or -not $HistSel) { return }
+    $pts = @(@($h[$HistSel].S) | Where-Object { $_ -is [hashtable] })
+    if ($pts.Count -eq 0) { return }
+    $W = $HistCanvas.ActualWidth; if ($W -lt 50) { $W = 760 }
+    $H = 170.0; $padL = 40.0; $padB = 22.0; $padT = 8.0
+    $max = 0.0; foreach ($p in $pts) { if ([double]$p.F -gt $max) { $max = [double]$p.F } }
+    if ($max -le 0) { return }
+    $top = [Math]::Ceiling($max / 50) * 50
+    $sx = $(if ($pts.Count -gt 1) { ($W - $padL - 10) / ($pts.Count - 1) } else { 0 })
+    foreach ($frac in 0, 0.5, 1) {
+        $y = $padT + ($H - $padT - $padB) * (1 - $frac)
+        $ln = New-Object System.Windows.Shapes.Line
+        $ln.X1 = $padL; $ln.X2 = $W; $ln.Y1 = $y; $ln.Y2 = $y; $ln.Stroke = Get-Brush '#1A2440'; $ln.StrokeThickness = 1
+        [void]$HistCanvas.Children.Add($ln)
+        $tb = New-Object System.Windows.Controls.TextBlock
+        $tb.Text = '{0:0}' -f ($top * $frac); $tb.FontSize = 10.5; $tb.Foreground = Get-Brush '#5A6685'
+        [System.Windows.Controls.Canvas]::SetLeft($tb, 0); [System.Windows.Controls.Canvas]::SetTop($tb, $y - 8)
+        [void]$HistCanvas.Children.Add($tb)
+    }
+    foreach ($series in @(@('F', '#FF8A1F'), @('L', '#2ED47A'))) {
+        $pl = New-Object System.Windows.Shapes.Polyline
+        $pl.Stroke = Get-Brush $series[1]; $pl.StrokeThickness = 2.2; $pl.StrokeLineJoin = 'Round'
+        $i = 0
+        foreach ($p in $pts) {
+            $v = [double]$p[$series[0]]
+            $x = $padL + $(if ($pts.Count -gt 1) { $i * $sx } else { ($W - $padL) / 2 })
+            $y = $padT + ($H - $padT - $padB) * (1 - [Math]::Min(1, $v / $top))
+            if ($v -gt 0) {
+                [void]$pl.Points.Add([System.Windows.Point]::new($x, $y))
+                $dot = New-Object System.Windows.Shapes.Ellipse
+                $dot.Width = 6; $dot.Height = 6; $dot.Fill = Get-Brush $series[1]
+                $dot.ToolTip = "$($p.D)  -  {0:0} FPS avg, {1:0} 1% low, {2} min" -f [double]$p.F, [double]$p.L, $p.M
+                [System.Windows.Controls.Canvas]::SetLeft($dot, $x - 3); [System.Windows.Controls.Canvas]::SetTop($dot, $y - 3)
+                [void]$HistCanvas.Children.Add($dot)
+            }
+            $i++
+        }
+        [void]$HistCanvas.Children.Insert(0, $pl)
+    }
+    foreach ($edge in @(@(0, $padL), @(($pts.Count - 1), ($W - 70)))) {
+        if ($pts.Count -lt 2 -and $edge[0] -ne 0) { continue }
+        $tb = New-Object System.Windows.Controls.TextBlock
+        $tb.Text = ([string]$pts[$edge[0]].D).Substring(0, 10); $tb.FontSize = 10.5; $tb.Foreground = Get-Brush '#5A6685'
+        [System.Windows.Controls.Canvas]::SetLeft($tb, $edge[1]); [System.Windows.Controls.Canvas]::SetTop($tb, $H - 16)
+        [void]$HistCanvas.Children.Add($tb)
+    }
+    $last = $pts[-1]
+    $avgAll = ($pts | ForEach-Object { [double]$_.F } | Measure-Object -Average).Average
+    $diff = $(if ($avgAll -gt 0) { ([double]$last.F - $avgAll) / $avgAll * 100 } else { 0 })
+    $HistInfo.Text = (L 'Sessions:') + " $($pts.Count)  -  " + (L 'last:') + (" {0:0} FPS ({1}{2:0}% " -f [double]$last.F, $(if ($diff -ge 0) { '+' } else { '' }), $diff) + (L 'vs. your average') + ')'
+}
+
+# ---- write pro settings into game config files
+$script:GameCfgs = @{
+    fortnite = @{ Name = 'Fortnite'; Format = 'ini'; Procs = @('FortniteClient-Win64-Shipping', 'FortniteLauncher')
+        Set = [ordered]@{ 'bUseVSync' = 'False'; 'bMotionBlur' = 'False'; 'bShowFPS' = 'True'; 'FrameRateLimit' = '0.000000'
+            'sg.ViewDistanceQuality' = '0'; 'sg.AntiAliasingQuality' = '0'; 'sg.ShadowQuality' = '0'; 'sg.GlobalIlluminationQuality' = '0'; 'sg.ReflectionQuality' = '0'
+            'sg.PostProcessQuality' = '0'; 'sg.TextureQuality' = '0'; 'sg.EffectsQuality' = '0'; 'sg.FoliageQuality' = '0'; 'sg.ShadingQuality' = '0' } }
+    cs2 = @{ Name = 'Counter-Strike 2'; Format = 'kv'; Procs = @('cs2')
+        Set = [ordered]@{ 'setting.mat_vsync' = '0'; 'setting.r_low_latency' = '2'; 'setting.shaderquality' = '0'; 'setting.r_aoproxy_enable' = '0'; 'setting.r_csgo_fsr_upsample' = '0' } }
+    apex = @{ Name = 'Apex Legends'; Format = 'kv'; Procs = @('r5apex', 'r5apex_dx12')
+        Set = [ordered]@{ 'setting.mat_vsync_mode' = '0'; 'setting.dvs_enable' = '0'; 'setting.mat_antialias_mode' = '0'; 'setting.ssao_enabled' = '0'; 'setting.volumetric_lighting' = '0'
+            'setting.cl_ragdoll_maxcount' = '0'; 'setting.r_createmodeldecals' = '0'; 'setting.mat_depthfeather_enable' = '0'; 'setting.particle_cpu_level' = '0'; 'setting.mat_forceaniso' = '2' } }
+}
+
+function Get-GameCfgFiles([string]$id) {
+    $l = @()
+    switch ($id) {
+        'fortnite' { $l = @(Join-Path $env:LOCALAPPDATA 'FortniteGame\Saved\Config\WindowsClient\GameUserSettings.ini') }
+        'apex' { $l = @(Join-Path $env:USERPROFILE 'Saved Games\Respawn\Apex\local\videoconfig.txt') }
+        'cs2' {
+            $root = Get-RegValue 'HKCU:\Software\Valve\Steam' 'SteamPath'
+            if ($root) {
+                $ud = Join-Path ($root -replace '/', '\') 'userdata'
+                if (Test-Path -LiteralPath $ud) {
+                    foreach ($u in @(Get-ChildItem -LiteralPath $ud -Directory -ErrorAction SilentlyContinue)) { $l += (Join-Path $u.FullName '730\local\cfg\cs2_video.txt') }
+                }
+            }
+        }
+    }
+    @($l | Where-Object { $_ -and (Test-Path -LiteralPath $_) })
+}
+
+function Get-GameCfgBackupDir([string]$id) { Join-Path $DataDir "gamecfg\$id" }
+
+function Read-TextKeepEncoding([string]$path) {
+    $bytes = [IO.File]::ReadAllBytes($path)
+    $enc = New-Object System.Text.UTF8Encoding($false)
+    if ($bytes.Length -ge 2 -and $bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE) { $enc = [System.Text.Encoding]::Unicode }
+    elseif ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { $enc = New-Object System.Text.UTF8Encoding($true) }
+    $sr = New-Object IO.StreamReader($path, $enc, $true)
+    try { $t = $sr.ReadToEnd() } finally { $sr.Close() }
+    @{ Text = $t; Enc = $enc }
+}
+
+function Set-GameConfig([string]$id) {
+    $c = $GameCfgs[$id]; if (-not $c) { return }
+    $running = @(foreach ($pn in $c.Procs) { Get-Process -Name $pn -ErrorAction SilentlyContinue })
+    if ($running.Count -gt 0) { Show-Msg ((L 'Please close the game first - it overwrites its settings when it exits.') + "`n`n$($c.Name)") 'Silvan Boost' 'OK' 'Warning' | Out-Null; return }
+    $files = Get-GameCfgFiles $id
+    if ($files.Count -eq 0) { Show-Msg (L 'The game settings file was not found. Start the game once, change any setting, close it - then try again.') | Out-Null; return }
+    $r = Show-Msg ((L 'Write the pro settings into the game config now?') + "`n`n" + (L 'Your current settings are backed up and can be restored with Undo.')) 'Silvan Boost' 'YesNo' 'Question'
+    if ([string]$r -ne 'Yes') { return }
+    $bdir = Get-GameCfgBackupDir $id
+    if (-not (Test-Path -LiteralPath (Join-Path $bdir 'map.json'))) {
+        New-Item -ItemType Directory -Path $bdir -Force | Out-Null
+        $map = @(); $i = 0
+        foreach ($f in $files) { $b = Join-Path $bdir ("{0}_{1}" -f $i, (Split-Path -Leaf $f)); Copy-Item -LiteralPath $f -Destination $b -Force; $map += , @{ Src = $f; Bak = $b }; $i++ }
+        ConvertTo-Json -InputObject @($map) -Depth 3 | Set-Content -LiteralPath (Join-Path $bdir 'map.json') -Encoding UTF8
+    }
+    $changed = 0; $found = 0
+    foreach ($f in $files) {
+        $d = Read-TextKeepEncoding $f; $t = $d.Text
+        foreach ($k in $c.Set.Keys) {
+            $v = $c.Set[$k]; $ek = [regex]::Escape($k)
+            if ($c.Format -eq 'ini') { $rx = "(?m)^(\s*$ek=)([^\r\n]*)" } else { $rx = "(?m)^(\s*`"$ek`"\s+`")([^`"\r\n]*)(`")" }
+            $m = [regex]::Match($t, $rx)
+            if (-not $m.Success) { continue }
+            $found++
+            if ($m.Groups[2].Value -ne $v) {
+                $t = [regex]::Replace($t, $rx, { param($mm) if ($mm.Groups.Count -gt 3 -and $mm.Groups[3].Success) { $mm.Groups[1].Value + $v + $mm.Groups[3].Value } else { $mm.Groups[1].Value + $v } })
+                $changed++
+            }
+        }
+        $fi = Get-Item -LiteralPath $f
+        $ro = $fi.IsReadOnly
+        if ($ro) { $fi.IsReadOnly = $false }
+        [IO.File]::WriteAllText($f, $t, $d.Enc)
+        if ($ro) { (Get-Item -LiteralPath $f).IsReadOnly = $true }
+    }
+    Write-Log "Game config for $($c.Name): $changed of $found settings changed in $($files.Count) file(s)."
+    Set-Status ("$($c.Name): " + (L 'pro settings written to the game config.'))
+    Show-Msg ("$($c.Name)`n`n" + ((L '{0} settings changed, {1} were already right.') -f $changed, ($found - $changed)) + "`n`n" + (L 'Resolution, display mode and Reflex can still be checked in the game menu.')) | Out-Null
+    Show-ProSettings $id
+}
+
+function Undo-GameConfig([string]$id) {
+    $c = $GameCfgs[$id]; $bdir = Get-GameCfgBackupDir $id
+    $mp = Join-Path $bdir 'map.json'
+    if (-not (Test-Path -LiteralPath $mp)) { return }
+    $running = @(foreach ($pn in $c.Procs) { Get-Process -Name $pn -ErrorAction SilentlyContinue })
+    if ($running.Count -gt 0) { Show-Msg ((L 'Please close the game first - it overwrites its settings when it exits.') + "`n`n$($c.Name)") 'Silvan Boost' 'OK' 'Warning' | Out-Null; return }
+    foreach ($e in @(Get-Content -LiteralPath $mp -Raw | ConvertFrom-Json)) {
+        $src = [string]$e.Src; $bak = [string]$e.Bak
+        if ((Test-Path -LiteralPath $bak) -and $bak.StartsWith($bdir, [StringComparison]::OrdinalIgnoreCase)) {
+            if (Test-Path -LiteralPath $src) { $fi = Get-Item -LiteralPath $src; if ($fi.IsReadOnly) { $fi.IsReadOnly = $false } }
+            Copy-Item -LiteralPath $bak -Destination $src -Force
+        }
+    }
+    Remove-Item -LiteralPath $bdir -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Log "Game config for $($c.Name) restored."
+    Set-Status ("$($c.Name): " + (L 'your previous game settings are back.'))
+    Show-ProSettings $id
+}
+
+function Update-ProCfgBar([string]$id) {
+    if (-not $script:ProCfgBar) { return }
+    if (-not $GameCfgs.ContainsKey($id)) { $ProCfgBar.Visibility = 'Collapsed'; return }
+    $ProCfgBar.Visibility = 'Visible'
+    $files = Get-GameCfgFiles $id
+    $hasBak = Test-Path -LiteralPath (Join-Path (Get-GameCfgBackupDir $id) 'map.json')
+    $BtnProCfgUndo.Visibility = $(if ($hasBak) { 'Visible' } else { 'Collapsed' })
+    $BtnProCfgApply.IsEnabled = ($files.Count -gt 0)
+    $ProCfgTxt.Text = L $(if ($files.Count -eq 0) { 'Settings file not found - start the game once, then come back.' } elseif ($hasBak) { 'Pro settings applied. Undo brings back your old settings.' } else { 'Your current game config is backed up first. Close the game before applying.' })
+}
+
+# ---- auto game mode
+$script:AgmSaved = $null
+$script:AgmBg = @('chrome', 'msedge', 'firefox', 'opera', 'opera_gx', 'brave', 'vivaldi', 'OneDrive', 'Teams', 'ms-teams', 'Dropbox', 'GoogleDriveFS', 'EpicWebHelper', 'steamwebhelper',
+    'EADesktop', 'EABackgroundService', 'Battle.net', 'RiotClientServices', 'GalaxyClient', 'UbisoftConnect', 'upc', 'CCXProcess', 'Creative Cloud', 'AdobeIPCBroker', 'MicrosoftEdgeUpdate', 'GoogleUpdate', 'iCloudDrive', 'Widgets', 'PhoneExperienceHost')
+
+function Enter-AutoGameMode($w) {
+    if ($State.misc['AutoGameMode'] -eq $false -or $AgmSaved) { return }
+    $script:AgmSaved = @{ Prios = @{}; Game = 0 }
+    $n = 0
+    foreach ($name in $AgmBg) {
+        foreach ($p in @(Get-Process -Name $name -ErrorAction SilentlyContinue)) {
+            try { if ($p.PriorityClass -eq [System.Diagnostics.ProcessPriorityClass]::Normal) { $p.PriorityClass = 'BelowNormal'; $AgmSaved.Prios[$p.Id] = 1; $n++ } } catch { }
+        }
+    }
+    try {
+        if ($Sync.GamePid) {
+            $gp = Get-Process -Id ([int]$Sync.GamePid) -ErrorAction Stop
+            if ($gp.PriorityClass -eq [System.Diagnostics.ProcessPriorityClass]::Normal) { $gp.PriorityClass = 'High'; $AgmSaved.Game = $gp.Id }
+        }
+    } catch { }
+    try { Enter-GameNetMode -Force } catch { }
+    Write-Log "Auto game mode ON for $($w.Name): $n background process(es) lowered$(if ($AgmSaved.Game) { ', game priority high' })."
+    Show-TrayTip 'Silvan Boost' ((L 'Game mode on for') + " $($w.Name)")
+}
+
+function Exit-AutoGameMode {
+    $s = $AgmSaved; if (-not $s) { return }
+    foreach ($id in @($s.Prios.Keys)) {
+        try { $p = Get-Process -Id ([int]$id) -ErrorAction Stop; if ($p.PriorityClass -eq [System.Diagnostics.ProcessPriorityClass]::BelowNormal) { $p.PriorityClass = 'Normal' } } catch { }
+    }
+    $script:AgmSaved = $null
+    Write-Log 'Auto game mode OFF: background priorities restored.'
+}
+
+# ---- tray icon
+$script:Tray = $null
+$script:ReallyQuit = $false
+function Initialize-Tray {
+    Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+    $ni = New-Object System.Windows.Forms.NotifyIcon
+    $ico = $null
+    try { if ($LauncherPath -and (Test-Path -LiteralPath $LauncherPath)) { $ico = [System.Drawing.Icon]::ExtractAssociatedIcon($LauncherPath) } } catch { }
+    if (-not $ico) { $ico = [System.Drawing.SystemIcons]::Application }
+    $ni.Icon = $ico
+    $ni.Text = 'Silvan Boost'
+    $menu = New-Object System.Windows.Forms.ContextMenuStrip
+    $miOpen = $menu.Items.Add('Open Silvan Boost'); $script:TrayMiOpen = $miOpen; $miOpen.Font = New-Object System.Drawing.Font($miOpen.Font, [System.Drawing.FontStyle]::Bold)
+    $miOpen.Add_Click({ Show-FromTray })
+    $miBench = $menu.Items.Add('Benchmark'); $miBench.Add_Click({ Show-FromTray; $NavBench.IsChecked = $true })
+    [void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+    $miExit = $menu.Items.Add('Exit'); $script:TrayMiExit = $miExit; $miExit.Add_Click({ $script:ReallyQuit = $true; $Window.Close() })
+    $menu.Add_Opening({ param($s, $e) try { $script:TrayMiOpen.Text = L 'Open Silvan Boost'; $script:TrayMiExit.Text = L 'Exit' } catch { } })
+    $ni.ContextMenuStrip = $menu
+    $ni.Add_MouseClick({ param($s, $e) if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Left) { Show-FromTray } })
+    $ni.Visible = $true
+    $script:Tray = $ni
+}
+
+function Show-TrayTip([string]$title, [string]$text) {
+    if (-not $Tray) { return }
+    try { $Tray.ShowBalloonTip(4000, $title, $text, [System.Windows.Forms.ToolTipIcon]::Info) } catch { }
+}
+
+function Show-FromTray {
+    try {
+        if (-not $Window.IsVisible) { $Window.Show() }
+        if ($Window.WindowState -eq 'Minimized') { $Window.WindowState = 'Normal' }
+        $Window.Activate() | Out-Null
+        $Window.Topmost = $true; $Window.Topmost = $false
+    } catch { }
+}
+
+# ---- share setup (export / import)
+$script:ImportKinds = @('remap', 'combo', 'text', 'macro', 'media', 'sniper', 'disable')
+$script:StepTypes = @('down', 'up', 'press', 'mdown', 'mup', 'click', 'delay', 'text')
+
+function Export-Setup {
+    $active = @($Tweaks | Where-Object { $_.Active -and -not $_.Action } | ForEach-Object { $_.Id })
+    $o = @{ SilvanBoostSetup = 1; Version = $AppVersion; Created = (Get-Date).ToString('yyyy-MM-dd HH:mm'); Tweaks = $active; Lang = [SBLang]::Lang }
+    if ($MacroCfg) { $o.Macro = @{ Profiles = @($MacroCfg.Profiles); Macros = @($MacroCfg.Macros) } }
+    $dlg = New-Object Microsoft.Win32.SaveFileDialog
+    $dlg.Title = L 'Export my setup'
+    $dlg.Filter = 'Silvan Boost setup (*.sbsetup)|*.sbsetup'
+    $dlg.FileName = "SilvanBoost-Setup-$env:USERNAME.sbsetup"
+    $dlg.InitialDirectory = [Environment]::GetFolderPath('Desktop')
+    if (-not $dlg.ShowDialog($Window)) { return }
+    ConvertTo-Json -InputObject $o -Depth 10 | Set-Content -LiteralPath $dlg.FileName -Encoding UTF8
+    Write-Log "Setup exported: $($active.Count) optimizations."
+    Set-Status ((L 'Setup saved:') + " $($dlg.FileName)")
+    try { Start-Process 'explorer.exe' -ArgumentList "/select,`"$($dlg.FileName)`"" } catch { }
+}
+
+function ConvertTo-SafeBinding($b, $idMap) {
+    if (-not ($b -is [hashtable])) { return $null }
+    $k = [string]$b.Kind
+    if ($ImportKinds -notcontains $k) { return $null }   # "open app or website" is never imported
+    $o = @{ Kind = $k }
+    switch ($k) {
+        'remap' { $v = [int]$b.Vk; if ($v -lt 1 -or $v -gt 254) { return $null }; $o.Vk = $v }
+        'combo' { $vs = @(@($b.Vks) | ForEach-Object { [int]$_ } | Where-Object { $_ -ge 1 -and $_ -le 254 } | Select-Object -First 5); if ($vs.Count -eq 0) { return $null }; $o.Vks = $vs }
+        'text' { $t = [string]$b.Text; if (-not $t) { return $null }; if ($t.Length -gt 500) { $t = $t.Substring(0, 500) }; $o.Text = $t }
+        'macro' { $nid = $idMap[[string]$b.MacroId]; if (-not $nid) { return $null }; $o.MacroId = $nid }
+        'media' { $m = [string]$b.Media; if ($MediaNames.Keys -notcontains $m) { return $null }; $o.Media = $m }
+        'sniper' { $o.Speed = [Math]::Max(1, [Math]::Min(20, [int]$b.Speed)) }
+    }
+    $o
+}
+
+function Import-Setup {
+    $dlg = New-Object Microsoft.Win32.OpenFileDialog
+    $dlg.Title = L 'Import a setup'
+    $dlg.Filter = 'Silvan Boost setup (*.sbsetup)|*.sbsetup'
+    if (-not $dlg.ShowDialog($Window)) { return }
+    if ((Get-Item -LiteralPath $dlg.FileName).Length -gt 2MB) { Show-Msg (L 'This is not a valid Silvan Boost setup file.') | Out-Null; return }
+    try { $h = ConvertTo-Hash (Get-Content -LiteralPath $dlg.FileName -Raw | ConvertFrom-Json) } catch { $h = $null }
+    if (-not ($h -is [hashtable]) -or [int]$h.SilvanBoostSetup -ne 1) { Show-Msg (L 'This is not a valid Silvan Boost setup file.') | Out-Null; return }
+    $want = @(@($h.Tweaks) | ForEach-Object { [string]$_ } | Where-Object { $TweakById.ContainsKey($_) } | Select-Object -Unique)
+    $ok = @(); $skip = 0
+    foreach ($id in $want) {
+        $t = $TweakById[$id]
+        if ($t.Active) { continue }
+        if (-not (Test-Suitable $t) -or $t.Action -or $t.Risk -in 'Advanced', 'Permanent') { $skip++; continue }
+        $ok += $t
+    }
+    $mc = $h.Macro; $nProf = 0; $nMac = 0
+    if ($mc -is [hashtable]) { $nProf = @(@($mc.Profiles) | Where-Object { $_ -is [hashtable] }).Count; $nMac = @(@($mc.Macros) | Where-Object { $_ -is [hashtable] }).Count }
+    $msg = (L 'Import this setup?') + "`n`n" + ((L '{0} optimizations to turn on') -f $ok.Count)
+    if ($skip) { $msg += "`n" + ((L '{0} skipped (advanced or not suitable for this PC)') -f $skip) }
+    $msg += "`n" + ((L '{0} macro profiles, {1} macros') -f $nProf, $nMac)
+    $r = Show-Msg $msg 'Silvan Boost' 'YesNo' 'Question'
+    if ([string]$r -ne 'Yes') { return }
+    if ($ok.Count -gt 0) {
+        if (-not (Ensure-RestorePoint)) { return }
+        Show-Overlay 'Applying optimizations...'
+        foreach ($t in $ok) { try { [void](Set-TweakState $t $true -Quiet) } catch { Write-Log "Import: $($t.Id) failed: $_" } }
+        Hide-Overlay
+    }
+    if (($mc -is [hashtable]) -and $MacroCfg) {
+        $idMap = @{}
+        foreach ($m in @(@($mc.Macros) | Where-Object { $_ -is [hashtable] } | Select-Object -First 100)) {
+            $steps = @()
+            foreach ($s in @(@($m.Steps) | Where-Object { $_ -is [hashtable] } | Select-Object -First 1000)) {
+                $ty = [string]$s.Type; if ($StepTypes -notcontains $ty) { continue }
+                $x = @{ Type = $ty }
+                if ($s.Vk) { $x.Vk = [Math]::Max(1, [Math]::Min(254, [int]$s.Vk)) }
+                if ($s.Button) { $x.Button = [Math]::Max(1, [Math]::Min(5, [int]$s.Button)) }
+                if ($ty -eq 'delay') { $x.Ms = [Math]::Max(0, [Math]::Min(60000, [int]$s.Ms)) }
+                if ($ty -eq 'text') { $tx = [string]$s.Text; if ($tx.Length -gt 500) { $tx = $tx.Substring(0, 500) }; $x.Text = $tx }
+                $steps += , $x
+            }
+            $nid = 'm' + [guid]::NewGuid().ToString('N').Substring(0, 8)
+            $idMap[[string]$m.Id] = $nid
+            $nm = ([string]$m.Name).Trim(); if (-not $nm) { $nm = 'Macro' }; if ($nm.Length -gt 40) { $nm = $nm.Substring(0, 40) }
+            $rep = [string]$m.Repeat; if (@('once', 'held', 'toggle') -notcontains $rep) { $rep = 'once' }
+            $MacroCfg.Macros = @($MacroCfg.Macros) + , @{ Id = $nid; Name = $nm; Steps = $steps; Repeat = $rep }
+        }
+        foreach ($p in @(@($mc.Profiles) | Where-Object { $_ -is [hashtable] } | Select-Object -First 50)) {
+            $exe = ([string]$p.Exe).ToLower()
+            if ($exe -and $exe -notmatch '^[a-z0-9_.\- ]{1,64}$') { continue }
+            $target = $(if (-not $exe) { Get-MacroProfile 'desktop' } else { @($MacroCfg.Profiles | Where-Object { $_.Exe -eq $exe })[0] })
+            if (-not $target) {
+                $nm = ([string]$p.Name).Trim(); if (-not $nm) { $nm = $exe }; if ($nm.Length -gt 32) { $nm = $nm.Substring(0, 32) }
+                $target = @{ Id = 'p' + [guid]::NewGuid().ToString('N').Substring(0, 8); Name = $nm; Exe = $exe; Game = [bool]$p.Game -or [bool]($Sync.Watch -and $Sync.Watch.ContainsKey($exe)); Bind = @{} }
+                $MacroCfg.Profiles = @($MacroCfg.Profiles) + , $target
+            }
+            if ($p.Bind -is [hashtable]) {
+                foreach ($k in @($p.Bind.Keys)) {
+                    if ($k -notmatch '^(MOUSE_MIDDLE|MOUSE_BACK|MOUSE_FORWARD|KEY:[A-Z+]*:\d{1,3})$') { continue }
+                    $b = ConvertTo-SafeBinding $p.Bind[$k] $idMap
+                    if (-not $b) { continue }
+                    if ($target.Game -and $SimpleKinds -notcontains $b.Kind) { continue }
+                    $target.Bind[$k] = $b
+                }
+            }
+        }
+        Save-Macros
+        $script:MacroInit = $false
+    }
+    Save-State
+    foreach ($t in $Tweaks) { Update-TweakUI $t }
+    Update-Stats
+    Write-Log "Setup imported: $($ok.Count) optimizations, $nProf macro profiles, $nMac macros."
+    Show-Msg (L 'Setup imported.') | Out-Null
+}
+
+# ---- problem report
+function New-ProblemReport {
+    $l = New-Object System.Collections.ArrayList
+    [void]$l.Add("Silvan Boost problem report - $((Get-Date).ToString('yyyy-MM-dd HH:mm'))")
+    [void]$l.Add("Version: $AppVersion   Language: $([SBLang]::Lang)")
+    try { $os = Get-CimInstance Win32_OperatingSystem; [void]$l.Add("Windows: $($os.Caption) $($os.Version) build $($os.BuildNumber)") } catch { }
+    [void]$l.Add("CPU: $($HW.CpuName)")
+    [void]$l.Add("GPU: $($HW.GpuName)   Driver: $($HW.GpuDriver)$(if ($HW.GpuDriverDate) { " ($($HW.GpuDriverDate.ToString('yyyy-MM-dd')))" })")
+    try { [void]$l.Add(("RAM: {0:0} GB" -f ((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB))) } catch { }
+    [void]$l.Add("Laptop: $($HW.IsLaptop)   Active optimizations: $(@($Tweaks | Where-Object { $_.Active }).Count)")
+    [void]$l.Add('')
+    [void]$l.Add('--- Activity log (last 150 lines) ---')
+    try { foreach ($x in @(Get-Content -LiteralPath $LogFile -Tail 150 -ErrorAction Stop)) { [void]$l.Add($x) } } catch { foreach ($x in $LogLines) { [void]$l.Add($x) } }
+    $txt = ($l -join "`r`n") -replace [regex]::Escape($env:USERNAME), '<user>'
+    $path = Join-Path ([Environment]::GetFolderPath('Desktop')) 'SilvanBoost-Report.txt'
+    Set-Content -LiteralPath $path -Value $txt -Encoding UTF8
+    try { [System.Windows.Clipboard]::SetText($txt) } catch { }
+    Write-Log 'Problem report created on the desktop.'
+    try { Start-Process 'explorer.exe' -ArgumentList "/select,`"$path`"" } catch { }
+    Show-Msg (L 'The report is on your desktop (SilvanBoost-Report.txt) and copied to the clipboard. Send it to Silvan and describe what went wrong.') | Out-Null
+}
+
+function Register-FeatureEvents {
+    $NavBench.Add_Checked({ Show-Page 'Bench' })
+    $BtnBench1.Add_Click({ try { Start-Bench 'before' } catch { Write-Log "Benchmark error: $_" } })
+    $BtnBench3.Add_Click({ try { Start-Bench 'after' } catch { Write-Log "Benchmark error: $_" } })
+    $BtnBench2.Add_Click({ $NavQuick.IsChecked = $true; try { $QbComp.IsChecked = $true } catch { } })
+    $BtnBenchStop.Add_Click({ try { if ($BenchRun -and $BenchRun.Fps.Count -ge 30) { Stop-Bench } else { Stop-Bench -Cancel } } catch { } })
+    $BtnBenchSave.Add_Click({ try { Save-BenchImage } catch { Write-Log "Image error: $_"; Show-Msg "$($_.Exception.Message)" | Out-Null } })
+    $BtnBenchReset.Add_Click({ $bd = Get-BenchData; $bd.Remove('Before'); $bd.Remove('After'); Save-State; Update-BenchUI })
+    $BtnProCfgApply.Add_Click({ try { Set-GameConfig $ProSel } catch { Write-Log "Game config error: $_"; Show-Msg "$($_.Exception.Message)" 'Silvan Boost' 'OK' 'Warning' | Out-Null } })
+    $BtnProCfgUndo.Add_Click({ try { Undo-GameConfig $ProSel } catch { Write-Log "Game config error: $_" } })
+    $AutoGameTg.IsChecked = ($State.misc['AutoGameMode'] -ne $false)
+    $AutoGameTg.Add_Click({ $State.misc['AutoGameMode'] = [bool]$AutoGameTg.IsChecked; Save-State; if (-not $AutoGameTg.IsChecked) { Exit-AutoGameMode } })
+    $TrayTg.IsChecked = ($State.misc['TrayOnClose'] -ne $false)
+    $TrayTg.Add_Click({ $State.misc['TrayOnClose'] = [bool]$TrayTg.IsChecked; Save-State })
+    $BtnExport.Add_Click({ try { Export-Setup } catch { Write-Log "Export error: $_"; Show-Msg "$($_.Exception.Message)" | Out-Null } })
+    $BtnImport.Add_Click({ try { Import-Setup } catch { Hide-Overlay; Write-Log "Import error: $_"; Show-Msg "$($_.Exception.Message)" | Out-Null } })
+    $BtnReport.Add_Click({ try { New-ProblemReport } catch { Write-Log "Report error: $_" } })
+    $HistCanvas.Add_SizeChanged({ try { Draw-History } catch { } })
+    $Window.Add_Closing({ param($s, $e)
+            if ($script:ReallyQuit -or $script:Restarting) { return }
+            if ($State.misc['TrayOnClose'] -eq $false -or -not $Tray) { return }
+            $e.Cancel = $true
+            $Window.Hide()
+            if (-not $State.misc['TrayHintShown']) {
+                $State.misc['TrayHintShown'] = $true; Save-State
+                Show-TrayTip 'Silvan Boost' (L 'Still running next to the clock. Right-click the icon to exit.')
+            } })
+}
+
 # ------------------------------------------------------------------ build window + wire events
 try {
     $script:Window = [System.Windows.Markup.XamlReader]::Parse($Xaml)
@@ -10311,6 +11209,8 @@ try {
     $NavInput.Add_Checked({ Show-Page 'Input' })
     Register-MacroEvents
     Register-TourEvents
+    Register-FeatureEvents
+    try { Initialize-Tray } catch { Write-Log "Tray icon error: $_" }
     $BtnPingTest.Add_Click({ try { Invoke-PingTest } catch { Write-Log "Ping test error: $_"; Hide-Overlay } })
     $BtnPingBoost.Add_Click({ try { Invoke-PingBoost } catch { Write-Log "Ping boost error: $_"; Hide-Overlay } })
     $BtnRoute.Add_Click({ try { Invoke-RouteTest '1.1.1.1' } catch { Write-Log "Route error: $_"; Hide-Overlay } })
@@ -10437,6 +11337,7 @@ try {
             Write-Log "Silvan Boost $AppVersion started on $($HW.CpuName) / $($HW.GpuName)."
             Start-Metrics
             try { Initialize-Macros } catch { Write-Log "Macro engine error: $_" }
+            try { Update-BenchUI; Build-History } catch { }
             Set-Status 'Ready - your PC has been scanned.'
             if ($JustUpdated -and $State.misc.ContainsKey('UpdFrom')) { Show-UpdatedNotice }
             Start-UpdateCheck
@@ -10452,14 +11353,21 @@ try {
     $Window.Add_Closed({
         $Sync.Run = $false
         try { [void][SBRaw]::Stop() } catch { }
+        try { Exit-AutoGameMode } catch { }
+        try { if ($Tray) { $Tray.Visible = $false; $Tray.Dispose() } } catch { }
         try { if ($script:MacroTimer) { $MacroTimer.Stop() }; [SBMacro]::Stop() } catch { }
         try { Exit-GameNetMode } catch { }
         Stop-PresentMon
         if (Test-Path -LiteralPath $PresentMonPath) { try { Start-Process -FilePath $PresentMonPath -ArgumentList '--terminate_existing_session --session_name SilvanBoostPM' -WindowStyle Hidden } catch { } }
         if ($script:Timer) { $Timer.Stop() }
+        try { if ($script:WpfApp) { $WpfApp.Shutdown() } } catch { }
     })
 
-    [void]$Window.ShowDialog()
+    # Application.Run (instead of ShowDialog) so the window can hide to the tray
+    $script:WpfApp = [System.Windows.Application]::Current
+    if (-not $WpfApp) { $script:WpfApp = New-Object System.Windows.Application }
+    $WpfApp.ShutdownMode = [System.Windows.ShutdownMode]::OnExplicitShutdown
+    [void]$WpfApp.Run($Window)
 } catch {
     Write-Log "Fatal: $($_.Exception.Message)"
     [System.Windows.MessageBox]::Show("Silvan Boost could not start:`n`n$($_.Exception.Message)`n`nLog: $LogFile", 'Silvan Boost', 'OK', 'Error') | Out-Null

@@ -1,11 +1,12 @@
 {
-  "version": "2.4.0",
+  "version": "2.5.0",
   "date": "2026-10-14",
   "url": "https://raw.githubusercontent.com/silvan3004-pixel/silvan-boost/main/SilvanBoost.ps1",
-  "sha256": "65413fd8b2eccbe04e8a3d52353d01d74a44623233320266fb670d9d2353880f",
+  "sha256": "90b3e96d240d66b9cfc3c01572b5290d4d6e6ff65fb365dc37eb3fab15024134",
   "notes": [
-    "New: short beginner tour on first start (skippable, open again with the ? button)",
-    "New: language switch German / English - globe button top right, applies instantly",
-    "Macros for mouse and keyboard with device detection (2.3)"
+    "New: before/after benchmark with a shareable result image (Gaming > Benchmark)",
+    "New: write pro settings straight into Fortnite, CS2 and Apex (with backup and undo)",
+    "New: auto game mode, tray icon, FPS history per game, driver check, share your setup, report a problem",
+    "Beginner tour and German / English (2.4)"
   ]
 }
