@@ -1,10 +1,11 @@
 {
-  "version": "2.5.1",
-  "date": "2026-10-14",
+  "version": "2.6.0",
+  "date": "2026-10-15",
   "url": "https://raw.githubusercontent.com/silvan3004-pixel/silvan-boost/main/SilvanBoost.ps1",
-  "sha256": "4ac92455b6f906fe142ce1265ffcb23443078de2491d04ea48ef41453c11edd7",
+  "sha256": "d72a201ac12e5224487ad278202a9423bf4ab81f7ff77a185e6f6b19d9d21d0a",
   "notes": [
-    "The Silvan Boost logo now shows in the taskbar, Alt+Tab and the tray instead of the PowerShell icon",
-    "Benchmark, pro settings into the game, auto game mode, tray icon, FPS history, driver check, share setup, report a problem (2.5)"
+    "Silvan Boost now needs an account: create one once, Silvan unlocks you, then the app opens by itself",
+    "Your account only works on your own PC",
+    "Plan: 1 month or Lifetime - you get a heads-up 3 days before a month ends"
   ]
 }

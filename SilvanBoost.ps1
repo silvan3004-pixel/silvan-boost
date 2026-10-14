@@ -16,7 +16,7 @@ param([switch]$NoElevate, [switch]$JustUpdated, [string]$LauncherPath)
 
 $ErrorActionPreference = 'Continue'
 $script:AppName    = 'Silvan Boost'
-$script:AppVersion = '2.5.1'
+$script:AppVersion = '2.6.0'
 
 # ------------------------------------------------------------------ elevation
 $wid = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -2702,6 +2702,76 @@ $Xaml = @'
       </Setter>
     </Style>
 
+    <Style x:Key="AuthField" TargetType="TextBox">
+      <Setter Property="Foreground" Value="#E8ECF5"/>
+      <Setter Property="CaretBrush" Value="#FF8A1F"/>
+      <Setter Property="FontSize" Value="14.5"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TextBox">
+            <Border x:Name="Bd" CornerRadius="10" Background="#0E1628" BorderBrush="#2A3858" BorderThickness="1" Padding="11,9">
+              <ScrollViewer x:Name="PART_ContentHost"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="BorderBrush" Value="#3A4C72"/></Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Bd" Property="BorderBrush" Value="#FF8A1F"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="AuthPass" TargetType="PasswordBox">
+      <Setter Property="Foreground" Value="#E8ECF5"/>
+      <Setter Property="CaretBrush" Value="#FF8A1F"/>
+      <Setter Property="FontSize" Value="14.5"/>
+      <Setter Property="PasswordChar" Value="&#x25CF;"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="PasswordBox">
+            <Border x:Name="Bd" CornerRadius="10" Background="#0E1628" BorderBrush="#2A3858" BorderThickness="1" Padding="11,9">
+              <ScrollViewer x:Name="PART_ContentHost"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="BorderBrush" Value="#3A4C72"/></Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Bd" Property="BorderBrush" Value="#FF8A1F"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="LinkBtn" TargetType="Button">
+      <Setter Property="Foreground" Value="#FFB36B"/>
+      <Setter Property="FontSize" Value="13.5"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="HorizontalAlignment" Value="Center"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border Background="Transparent" Padding="6,4">
+              <TextBlock x:Name="Tx" Text="{Binding Content, RelativeSource={RelativeSource TemplatedParent}}"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Tx" Property="TextDecorations" Value="Underline"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="AuthLbl" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="#7F8BA6"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="Margin" Value="0,14,0,6"/>
+    </Style>
+    <Style x:Key="AuthErr" TargetType="Border">
+      <Setter Property="Background" Value="#1FF87171"/>
+      <Setter Property="CornerRadius" Value="9"/>
+      <Setter Property="Padding" Value="12,9"/>
+      <Setter Property="Margin" Value="0,14,0,0"/>
+      <Setter Property="Visibility" Value="Collapsed"/>
+    </Style>
+
     <Style x:Key="SmallBtn" TargetType="Button">
       <Setter Property="Foreground" Value="#FFB06A"/>
       <Setter Property="FontSize" Value="12"/>
@@ -2951,7 +3021,7 @@ $Xaml = @'
                   </StackPanel>
                 </Grid>
               </Border>
-              <Border Margin="12,10,12,0" Padding="10" CornerRadius="12" Background="#111A2E" BorderBrush="#1E2A45" BorderThickness="1">
+              <Border x:Name="UserCardBox" Margin="12,10,12,0" Padding="10" CornerRadius="12" Background="#111A2E" BorderBrush="#1E2A45" BorderThickness="1" Cursor="Hand" ToolTip="Account">
                 <DockPanel>
                   <Grid DockPanel.Dock="Left" Width="38" Height="38" VerticalAlignment="Center">
                     <Border CornerRadius="19" Background="#29FF8A1F" BorderBrush="#55FF8A1F" BorderThickness="1">
@@ -2962,6 +3032,7 @@ $Xaml = @'
                   <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
                     <TextBlock x:Name="UserName" Text="" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
                     <TextBlock x:Name="UserOs" Text="" FontSize="11" Foreground="#9AA5BF" TextWrapping="Wrap" Margin="0,1,0,0"/>
+                    <TextBlock x:Name="UserPlan" Text="" FontSize="11" FontWeight="SemiBold" Foreground="#5BE39A" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" Visibility="Collapsed"/>
                   </StackPanel>
                 </DockPanel>
               </Border>
@@ -4842,6 +4913,188 @@ $Xaml = @'
           </Border>
         </Grid>
       </Grid>
+      <!-- plan ending soon -->
+      <Border x:Name="AuthToast" Grid.ColumnSpan="2" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,22,46" MaxWidth="420" CornerRadius="12" Background="#111A2E" BorderBrush="#66FBBF24" BorderThickness="1" Padding="14,12" Visibility="Collapsed">
+        <Border.Effect><DropShadowEffect BlurRadius="30" ShadowDepth="8" Direction="270" Opacity="0.4" Color="#000000"/></Border.Effect>
+        <DockPanel>
+          <Button x:Name="BtnAuthToastX" DockPanel.Dock="Right" Style="{StaticResource TitleBtn}" Content="&#xE8BB;" VerticalAlignment="Top" Margin="6,-10,-12,-10"/>
+          <Border Width="32" Height="32" CornerRadius="16" Background="#1FFBBF24" VerticalAlignment="Center">
+            <TextBlock Text="&#xE823;" FontFamily="{StaticResource IconFont}" FontSize="15" Foreground="#FBBF24" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <TextBlock x:Name="AuthToastTxt" Text="" FontSize="13.5" Foreground="#C3CBDD" TextWrapping="Wrap" Margin="12,0,0,0" VerticalAlignment="Center"/>
+        </DockPanel>
+      </Border>
+
+      <!-- ACCOUNT / LOGIN -->
+      <Grid x:Name="AuthLayer" Grid.ColumnSpan="2" Visibility="Visible" Background="#0A0F1C">
+        <Border IsHitTestVisible="False">
+          <Border.Background>
+            <RadialGradientBrush Center="0.5,0.42" GradientOrigin="0.5,0.42" RadiusX="0.55" RadiusY="0.6">
+              <GradientStop Color="#1AFF8A1F" Offset="0"/>
+              <GradientStop Color="#00FF8A1F" Offset="1"/>
+            </RadialGradientBrush>
+          </Border.Background>
+        </Border>
+        <DockPanel VerticalAlignment="Top" Height="44">
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+            <Button x:Name="BtnAuthDe" Style="{StaticResource TitleBtn}" FontFamily="Segoe UI" FontSize="12" FontWeight="SemiBold" Content="DE"/>
+            <Button x:Name="BtnAuthEn" Style="{StaticResource TitleBtn}" FontFamily="Segoe UI" FontSize="12" FontWeight="SemiBold" Content="EN"/>
+            <Button x:Name="BtnAuthMin" Style="{StaticResource TitleBtn}" Content="&#xE921;"/>
+            <Button x:Name="BtnAuthClose" Style="{StaticResource CloseBtn}" Content="&#xE8BB;"/>
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Margin="18,0,0,0" VerticalAlignment="Center">
+            <Image x:Name="AuthLogoSmall" Width="18" Height="18" VerticalAlignment="Center"/>
+            <TextBlock Text="Silvan Boost" Foreground="#8C97B0" FontSize="12.5" Margin="9,0,0,0" VerticalAlignment="Center"/>
+          </StackPanel>
+        </DockPanel>
+
+        <Border x:Name="AuthCard" Width="440" CornerRadius="20" Background="#111A2E" BorderBrush="#2A3858" BorderThickness="1" Padding="34,32,34,26" HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+          <Border.RenderTransform><TranslateTransform Y="0"/></Border.RenderTransform>
+          <Border.Effect><DropShadowEffect BlurRadius="60" ShadowDepth="18" Direction="270" Opacity="0.45" Color="#000000"/></Border.Effect>
+          <Grid>
+            <!-- busy / offline -->
+            <StackPanel x:Name="AuthBusyPanel" Visibility="Visible">
+              <Image x:Name="AuthLogo0" Width="54" Height="54" HorizontalAlignment="Center"/>
+              <TextBlock x:Name="AuthBusyTitle" Text="Checking your account..." FontSize="20" FontWeight="SemiBold" FontFamily="Segoe UI Variable Display, Segoe UI" Margin="0,18,0,0" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
+              <ProgressBar x:Name="AuthBusyBar" IsIndeterminate="True" Height="4" Margin="20,18,20,0" Foreground="#FF8A1F" Background="#1A2440" BorderThickness="0"/>
+              <Border x:Name="AuthBusyErr" Style="{StaticResource AuthErr}">
+                <TextBlock x:Name="AuthBusyErrTxt" Text="" Foreground="#F87171" FontSize="13" TextWrapping="Wrap"/>
+              </Border>
+              <Button x:Name="BtnAuthRetry" Style="{StaticResource PrimaryBtn}" Content="Try again" Padding="18,12" Margin="0,16,0,0" Visibility="Collapsed"/>
+              <Button x:Name="BtnAuthBusyOut" Style="{StaticResource LinkBtn}" Content="Sign in with another account" Margin="0,12,0,0" Visibility="Collapsed"/>
+            </StackPanel>
+
+            <!-- sign in -->
+            <StackPanel x:Name="AuthLoginPanel" Visibility="Collapsed">
+              <Image x:Name="AuthLogo1" Width="50" Height="50" HorizontalAlignment="Left"/>
+              <TextBlock Text="Welcome back" FontSize="25" FontWeight="SemiBold" FontFamily="Segoe UI Variable Display, Segoe UI" Margin="0,16,0,0"/>
+              <TextBlock x:Name="AuthLoginSub" Text="Sign in to use Silvan Boost." FontSize="14" Foreground="#9AA5BF" Margin="0,4,0,4" TextWrapping="Wrap"/>
+              <TextBlock Text="USERNAME" Style="{StaticResource AuthLbl}"/>
+              <TextBox x:Name="AuthLUser" Style="{StaticResource AuthField}" MaxLength="20"/>
+              <TextBlock Text="PASSWORD" Style="{StaticResource AuthLbl}"/>
+              <PasswordBox x:Name="AuthLPass" Style="{StaticResource AuthPass}" MaxLength="100"/>
+              <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                <CheckBox x:Name="AuthRemember" Style="{StaticResource Toggle}" IsChecked="True" VerticalAlignment="Center"/>
+                <TextBlock Text="Stay signed in" Foreground="#9AA5BF" FontSize="13" Margin="10,0,0,0" VerticalAlignment="Center"/>
+              </StackPanel>
+              <Border x:Name="AuthLErr" Style="{StaticResource AuthErr}">
+                <TextBlock x:Name="AuthLErrTxt" Text="" Foreground="#F87171" FontSize="13" TextWrapping="Wrap"/>
+              </Border>
+              <Button x:Name="BtnAuthLogin" Style="{StaticResource PrimaryBtn}" Content="Sign in" Padding="18,12" Margin="0,18,0,0" FontSize="14.5"/>
+              <Button x:Name="BtnAuthToReg" Style="{StaticResource LinkBtn}" Content="No account yet? Create account" Margin="0,12,0,0"/>
+            </StackPanel>
+
+            <!-- register -->
+            <StackPanel x:Name="AuthRegPanel" Visibility="Collapsed">
+              <Image x:Name="AuthLogo2" Width="50" Height="50" HorizontalAlignment="Left"/>
+              <TextBlock Text="Create account" FontSize="25" FontWeight="SemiBold" FontFamily="Segoe UI Variable Display, Segoe UI" Margin="0,16,0,0"/>
+              <TextBlock Text="Silvan unlocks your account afterwards." FontSize="14" Foreground="#9AA5BF" Margin="0,4,0,4" TextWrapping="Wrap"/>
+              <TextBlock Text="USERNAME" Style="{StaticResource AuthLbl}"/>
+              <TextBox x:Name="AuthRUser" Style="{StaticResource AuthField}" MaxLength="20"/>
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="12"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                <StackPanel>
+                  <TextBlock Text="PASSWORD" Style="{StaticResource AuthLbl}"/>
+                  <PasswordBox x:Name="AuthRPass" Style="{StaticResource AuthPass}" MaxLength="100"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                  <TextBlock Text="REPEAT" Style="{StaticResource AuthLbl}"/>
+                  <PasswordBox x:Name="AuthRPass2" Style="{StaticResource AuthPass}" MaxLength="100"/>
+                </StackPanel>
+              </Grid>
+              <Border CornerRadius="10" Background="#0E1628" BorderBrush="#2A3858" BorderThickness="1" Padding="12,10" Margin="0,16,0,0">
+                <DockPanel>
+                  <TextBlock Text="YOUR PC-ID" Foreground="#7F8BA6" FontSize="11" FontWeight="Bold" VerticalAlignment="Center"/>
+                  <TextBlock x:Name="AuthPcId" Text="" FontFamily="Consolas" FontSize="14.5" FontWeight="SemiBold" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                </DockPanel>
+              </Border>
+              <Border x:Name="AuthRErr" Style="{StaticResource AuthErr}">
+                <TextBlock x:Name="AuthRErrTxt" Text="" Foreground="#F87171" FontSize="13" TextWrapping="Wrap"/>
+              </Border>
+              <Button x:Name="BtnAuthReg" Style="{StaticResource PrimaryBtn}" Content="Create account" Padding="18,12" Margin="0,18,0,0" FontSize="14.5"/>
+              <Button x:Name="BtnAuthToLogin" Style="{StaticResource LinkBtn}" Content="I already have an account" Margin="0,12,0,0"/>
+            </StackPanel>
+
+            <!-- waiting for approval -->
+            <StackPanel x:Name="AuthWaitPanel" Visibility="Collapsed">
+              <Grid Width="76" Height="76" HorizontalAlignment="Center">
+                <Ellipse Stroke="#1A2540" StrokeThickness="4"/>
+                <Path x:Name="AuthSpin" Stroke="#FF8A1F" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M 38,2 A 36,36 0 0 1 74,38" RenderTransformOrigin="0.5,0.5">
+                  <Path.RenderTransform><RotateTransform Angle="0"/></Path.RenderTransform>
+                </Path>
+              </Grid>
+              <TextBlock x:Name="AuthWaitTitle" Text="Almost there" FontSize="23" FontWeight="SemiBold" FontFamily="Segoe UI Variable Display, Segoe UI" Margin="0,18,0,0" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
+              <TextBlock Text="Silvan got your request and still has to unlock you." FontSize="14" Foreground="#9AA5BF" Margin="0,6,0,0" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
+              <StackPanel Margin="0,20,0,0">
+                <DockPanel Margin="0,0,0,9">
+                  <Border Width="24" Height="24" CornerRadius="12" Background="#212ED47A"><TextBlock Text="&#xE73E;" FontFamily="{StaticResource IconFont}" FontSize="11" Foreground="#2ED47A" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+                  <TextBlock Text="Account created" FontSize="14" Margin="11,0,0,0" VerticalAlignment="Center"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,9">
+                  <Border Width="24" Height="24" CornerRadius="12" Background="#212ED47A"><TextBlock Text="&#xE73E;" FontFamily="{StaticResource IconFont}" FontSize="11" Foreground="#2ED47A" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+                  <TextBlock Text="Request sent to Silvan" FontSize="14" Margin="11,0,0,0" VerticalAlignment="Center"/>
+                </DockPanel>
+                <DockPanel>
+                  <Border Width="24" Height="24" CornerRadius="12" Background="#24FF8A1F"><TextBlock Text="3" FontSize="12" FontWeight="Bold" Foreground="#FF8A1F" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+                  <TextBlock Text="Waiting for approval..." FontSize="14" Foreground="#9AA5BF" Margin="11,0,0,0" VerticalAlignment="Center"/>
+                </DockPanel>
+              </StackPanel>
+              <TextBlock Text="You can close Silvan Boost and come back later." FontSize="12.5" Foreground="#7F8BA6" Margin="0,18,0,0" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"/>
+              <Button x:Name="BtnAuthWaitOut" Style="{StaticResource GhostBtn}" Content="Sign out" Padding="18,11" Margin="0,14,0,0"/>
+            </StackPanel>
+
+            <!-- unlocked -->
+            <StackPanel x:Name="AuthOkPanel" Visibility="Collapsed">
+              <Border x:Name="AuthOkCheck" Width="66" Height="66" CornerRadius="33" Background="#242ED47A" BorderBrush="#802ED47A" BorderThickness="1.5" HorizontalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                <Border.RenderTransform><ScaleTransform ScaleX="1" ScaleY="1"/></Border.RenderTransform>
+                <TextBlock Text="&#xE73E;" FontFamily="{StaticResource IconFont}" FontSize="27" Foreground="#2ED47A" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+              <TextBlock Text="You're unlocked" FontSize="25" FontWeight="SemiBold" FontFamily="Segoe UI Variable Display, Segoe UI" Margin="0,18,0,0" HorizontalAlignment="Center"/>
+              <TextBlock x:Name="AuthOkSub" Text="" FontSize="14" Foreground="#9AA5BF" Margin="0,6,0,0" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
+              <Border CornerRadius="12" Background="#0E1628" BorderBrush="#2A3858" BorderThickness="1" Padding="14,12" Margin="0,20,0,0">
+                <DockPanel>
+                  <Border x:Name="AuthOkPill" DockPanel.Dock="Right" CornerRadius="11" Background="#212ED47A" Padding="10,3" VerticalAlignment="Center">
+                    <TextBlock x:Name="AuthOkPillTxt" Text="" FontSize="12" FontWeight="Bold" Foreground="#5BE39A"/>
+                  </Border>
+                  <StackPanel>
+                    <TextBlock Text="YOUR PLAN" Foreground="#7F8BA6" FontSize="11" FontWeight="Bold"/>
+                    <TextBlock x:Name="AuthOkPlan" Text="" FontSize="16" FontWeight="SemiBold" FontFamily="Segoe UI Variable Display, Segoe UI" Margin="0,2,0,0"/>
+                  </StackPanel>
+                </DockPanel>
+              </Border>
+              <Button x:Name="BtnAuthGo" Style="{StaticResource PrimaryBtn}" Content="Let's go" Padding="18,12" Margin="0,20,0,0" FontSize="14.5"/>
+            </StackPanel>
+
+            <!-- plan ended -->
+            <StackPanel x:Name="AuthExpPanel" Visibility="Collapsed">
+              <Border Width="66" Height="66" CornerRadius="33" Background="#1FFBBF24" BorderBrush="#73FBBF24" BorderThickness="1.5" HorizontalAlignment="Center">
+                <TextBlock Text="&#xE823;" FontFamily="{StaticResource IconFont}" FontSize="27" Foreground="#FBBF24" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+              <TextBlock Text="Your plan has ended" FontSize="25" FontWeight="SemiBold" FontFamily="Segoe UI Variable Display, Segoe UI" Margin="0,18,0,0" HorizontalAlignment="Center"/>
+              <TextBlock x:Name="AuthExpSub" Text="" FontSize="14" Foreground="#9AA5BF" Margin="0,6,0,0" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
+              <DockPanel Margin="0,20,0,0">
+                <Border Width="24" Height="24" CornerRadius="12" Background="#24FF8A1F"><TextBlock Text="&#xE895;" FontFamily="{StaticResource IconFont}" FontSize="11" Foreground="#FF8A1F" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+                <TextBlock Text="Waiting for renewal..." FontSize="14" Foreground="#9AA5BF" Margin="11,0,0,0" VerticalAlignment="Center"/>
+              </DockPanel>
+              <Button x:Name="BtnAuthExpOut" Style="{StaticResource GhostBtn}" Content="Sign out" Padding="18,11" Margin="0,20,0,0"/>
+            </StackPanel>
+
+            <!-- locked -->
+            <StackPanel x:Name="AuthLockPanel" Visibility="Collapsed">
+              <Border Width="66" Height="66" CornerRadius="33" Background="#1FF87171" BorderBrush="#73F87171" BorderThickness="1.5" HorizontalAlignment="Center">
+                <TextBlock Text="&#xE72E;" FontFamily="{StaticResource IconFont}" FontSize="26" Foreground="#F87171" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+              <TextBlock x:Name="AuthLockTitle" Text="This account is locked" FontSize="24" FontWeight="SemiBold" FontFamily="Segoe UI Variable Display, Segoe UI" Margin="0,18,0,0" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
+              <TextBlock x:Name="AuthLockSub" Text="" FontSize="14" Foreground="#9AA5BF" Margin="0,6,0,0" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
+              <Border x:Name="AuthLockErr" Style="{StaticResource AuthErr}">
+                <TextBlock x:Name="AuthLockErrTxt" Text="" Foreground="#F87171" FontSize="13" TextWrapping="Wrap"/>
+              </Border>
+              <Button x:Name="BtnAuthLockOut" Style="{StaticResource GhostBtn}" Content="Sign in with another account" Padding="18,11" Margin="0,20,0,0"/>
+            </StackPanel>
+          </Grid>
+        </Border>
+      </Grid>
+
     </Grid>
   </Border>
 </Window>
@@ -10497,6 +10750,69 @@ P	^Driver (\\S+) \\((.+)\\): (\\d+) months old - newer drivers often bring FPS f
 P	^Driver (\\S+) \\((.+)\\): (\\d+) months old - newer drivers often bring FPS fixes for new games\\. Open AMD Software: Adrenalin Edition and click Check for updates\\.$	Treiber $1 ($2): $3 Monate alt - neuere Treiber bringen oft FPS-Verbesserungen f\u00fcr neue Spiele. \u00d6ffne AMD Software: Adrenalin Edition und klicke auf Nach Updates suchen.
 P	^Driver (\\S+) \\((.+)\\): (\\d+) months old - newer drivers often bring FPS fixes for new games\\. Get the newest driver from your graphics card or laptop maker\\.$	Treiber $1 ($2): $3 Monate alt - neuere Treiber bringen oft FPS-Verbesserungen f\u00fcr neue Spiele. Hol dir den neuesten Treiber vom Hersteller deiner Grafikkarte oder deines Laptops.
 P	^Driver (\\S+) from (.+)\\.$	Treiber $1 vom $2.
+S	Checking your account...	Konto wird gepr\u00fcft ...
+S	Try again	Erneut versuchen
+S	Sign in with another account	Mit anderem Konto anmelden
+S	Welcome back	Willkommen zur\u00fcck
+S	Sign in to use Silvan Boost.	Melde dich an, um Silvan Boost zu nutzen.
+S	USERNAME	BENUTZERNAME
+S	PASSWORD	PASSWORT
+S	REPEAT	WIEDERHOLEN
+S	Stay signed in	Angemeldet bleiben
+S	Sign in	Anmelden
+S	No account yet? Create account	Noch kein Konto? Konto erstellen
+S	Create account	Konto erstellen
+S	Silvan unlocks your account afterwards.	Silvan schaltet dein Konto danach frei.
+S	YOUR PC-ID	DEINE PC-ID
+S	I already have an account	Ich habe schon ein Konto
+S	Almost there	Fast geschafft
+S	Silvan got your request and still has to unlock you.	Silvan hat deine Anfrage bekommen und muss dich noch freischalten.
+S	Account created	Konto erstellt
+S	Request sent to Silvan	Anfrage an Silvan geschickt
+S	Waiting for approval...	Warte auf Freischaltung ...
+S	You can close Silvan Boost and come back later.	Du kannst Silvan Boost schlie\u00dfen und sp\u00e4ter wiederkommen.
+S	Sign out	Abmelden
+S	You're unlocked	Du bist freigeschaltet
+S	YOUR PLAN	DEIN ABO
+S	Let's go	Los geht's
+S	1 month	1 Monat
+S	Lifetime	Lifetime
+S	never ends	l\u00e4uft nie ab
+S	Your plan has ended	Dein Abo ist abgelaufen
+S	Waiting for renewal...	Warte auf Verl\u00e4ngerung ...
+S	Message Silvan so he can extend it. The app opens again by itself.	Schreib Silvan, damit er verl\u00e4ngert. Die App \u00f6ffnet sich dann von selbst wieder.
+S	This account is locked	Dieses Konto ist gesperrt
+S	Wrong PC	Falscher PC
+S	This account was created on a different PC.	Dieses Konto wurde auf einem anderen PC erstellt.
+S	Your account only works on the PC where you created it. New PC? Ask Silvan to reset your account, then sign in here again.	Dein Konto gilt nur f\u00fcr den PC, auf dem du es erstellt hast. Neuer PC? Bitte Silvan, dein Konto zur\u00fcckzusetzen, und melde dich dann hier erneut an.
+S	Request declined	Anfrage abgelehnt
+S	Silvan did not approve this account. If you think this is a mistake, message him.	Silvan hat dieses Konto nicht freigeschaltet. Wenn du denkst, das ist ein Fehler, schreib ihm.
+S	Silvan has ended access for this account. If you think this is a mistake, message him.	Silvan hat den Zugang f\u00fcr dieses Konto beendet. Wenn du denkst, das ist ein Fehler, schreib ihm.
+S	Wrong username or password.	Falscher Benutzername oder falsches Passwort.
+S	This account belongs to a different PC. It only works on the PC where it was created - ask Silvan to reset it.	Dieses Konto geh\u00f6rt zu einem anderen PC. Es funktioniert nur auf dem PC, auf dem es erstellt wurde - bitte Silvan, es zur\u00fcckzusetzen.
+S	This username is already taken. Try another one.	Dieser Benutzername ist schon vergeben. Probiere einen anderen.
+S	Username: 3 to 20 characters, only letters, numbers and _ . -	Benutzername: 3 bis 20 Zeichen, nur Buchstaben, Zahlen und _ . -
+S	Your password needs at least 6 characters.	Dein Passwort braucht mindestens 6 Zeichen.
+S	Too many tries. Wait a few minutes and try again.	Zu viele Versuche. Warte ein paar Minuten und probiere es erneut.
+S	Can't reach the Silvan Boost server. Check your internet connection and try again.	Der Silvan-Boost-Server ist nicht erreichbar. Pr\u00fcfe deine Internetverbindung und probiere es erneut.
+S	Enter your username and password.	Gib Benutzername und Passwort ein.
+S	The two passwords are not the same.	Die beiden Passw\u00f6rter stimmen nicht \u00fcberein.
+S	Signing in...	Anmeldung l\u00e4uft ...
+S	Creating account...	Konto wird erstellt ...
+S	You were signed out. Please sign in again.	Du wurdest abgemeldet. Bitte melde dich erneut an.
+S	Not signed in	Nicht angemeldet
+S	Your plan ends today. Message Silvan if you want to extend it.	Dein Abo l\u00e4uft heute ab. Schreib Silvan, wenn du verl\u00e4ngern m\u00f6chtest.
+S	Your plan ends in 1 day. Message Silvan if you want to extend it.	Dein Abo l\u00e4uft in 1 Tag ab. Schreib Silvan, wenn du verl\u00e4ngern m\u00f6chtest.
+P	^Almost there, (.+)$	Fast geschafft, $1
+P	^Have fun with Silvan Boost, (.+)\\.$	Viel Spa\u00df mit Silvan Boost, $1.
+P	^until (\\d\\d\\.\\d\\d\\.\\d{4})$	bis $1
+P	^Your month of Silvan Boost ended on (.+)\\. Message Silvan so he can extend it\\. The app opens again by itself\\.$	Dein Monat Silvan Boost ist am $1 zu Ende gegangen. Schreib Silvan, damit er verl\u00e4ngert. Die App \u00f6ffnet sich dann von selbst wieder.
+P	^Account (.+) \u00b7 Lifetime$	Konto $1 \u00b7 Lifetime
+P	^Account (.+) \u00b7 1 day left$	Konto $1 \u00b7 noch 1 Tag
+P	^Account (.+) \u00b7 (\\d+) days left$	Konto $1 \u00b7 noch $2 Tage
+P	^Your plan ends in (\\d+) days\\. Message Silvan if you want to extend it\\.$	Dein Abo l\u00e4uft in $1 Tagen ab. Schreib Silvan, wenn du verl\u00e4ngern m\u00f6chtest.
+P	^Something went wrong on the server \\(error (\\d+)\\)\\. Try again in a moment\\.$	Auf dem Server ist etwas schiefgelaufen (Fehler $1). Probiere es gleich noch einmal.
+P	^Signed in as (.+)$	Angemeldet als $1
 '@
 
 # ------------------------------------------------------------------ language + beginner tour
@@ -11355,6 +11671,583 @@ function Register-FeatureEvents {
             } })
 }
 
+# ------------------------------------------------------------------ account + license
+# Users sign in with an account that Silvan approves. The server signs a short license
+# (ECDSA P-256) bound to this PC; the app checks it offline and refreshes it online.
+$script:AuthApi  = 'https://silvan-boost.silvan3004.workers.dev'
+$script:AuthPubX = '8erztdKEVnfRqNnBIM9K2AVIMc5_AlK0bVKtXokfFW0'
+$script:AuthPubY = 'EnZlH3nlRiyspyAyEBbywOCX8UYEqiNCOfRP4Fyp6rY'
+$script:AuthFile = Join-Path $env:LOCALAPPDATA 'SilvanBoost\account.dat'
+$script:Auth = @{ user = ''; sid = ''; license = ''; maxNow = 0; temp = $false }
+$script:AuthUnlocked = $false
+$script:AuthWasWaiting = $false
+$script:AuthCall = $null
+$script:AuthCallTimer = $null
+$script:AuthPollTimer = $null
+$script:AuthPollMode = ''
+$script:AuthLastOnline = [datetime]::MinValue
+$script:AuthPanel = ''
+$script:PcId = ''
+
+$script:LicOk = $false
+try {
+    Add-Type -AssemblyName System.Security
+    Add-Type -ReferencedAssemblies @([System.Security.Cryptography.ECDsa].Assembly.Location) -TypeDefinition @'
+using System;
+using System.Text;
+using System.Security.Cryptography;
+public static class SBLic {
+    static byte[] U(string s) {
+        s = s.Replace('-', '+').Replace('_', '/');
+        while (s.Length % 4 != 0) s += "=";
+        return Convert.FromBase64String(s);
+    }
+    public static bool Verify(string x, string y, string lic) {
+        try {
+            int i = lic.IndexOf('.');
+            if (i < 1) return false;
+            string body = lic.Substring(0, i);
+            byte[] sig = Convert.FromBase64String(lic.Substring(i + 1));
+            if (sig.Length != 64) return false;
+            ECParameters p = new ECParameters();
+            p.Curve = ECCurve.NamedCurves.nistP256;
+            p.Q = new ECPoint { X = U(x), Y = U(y) };
+            using (ECDsa ec = ECDsa.Create(p)) {
+                return ec.VerifyData(Encoding.ASCII.GetBytes(body), sig, HashAlgorithmName.SHA256);
+            }
+        } catch { return false; }
+    }
+    public static string Body(string lic) {
+        int i = lic.IndexOf('.');
+        return Encoding.UTF8.GetString(Convert.FromBase64String(lic.Substring(0, i)));
+    }
+}
+'@
+    $script:LicOk = $true
+} catch { }
+
+function Get-NowMs { [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() }
+
+function Get-PcId {
+    $src = ''
+    try {
+        $hk = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryView]::Registry64)
+        $k = $hk.OpenSubKey('SOFTWARE\Microsoft\Cryptography')
+        if ($k) { $src = [string]$k.GetValue('MachineGuid'); $k.Close() }
+        $hk.Close()
+    } catch { }
+    if (-not $src) { $src = "$env:COMPUTERNAME|$env:PROCESSOR_IDENTIFIER" }
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $h = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes("SilvanBoost|$($src.ToLower())"))
+    $hex = -join ($h[0..5] | ForEach-Object { $_.ToString('X2') })
+    "SB-$($hex.Substring(0, 4))-$($hex.Substring(4, 4))-$($hex.Substring(8, 4))"
+}
+
+function Get-WinLabel {
+    try {
+        $k = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction Stop
+        $name = [string]$k.ProductName
+        if ([int]$k.CurrentBuildNumber -ge 22000) { $name = $name -replace 'Windows 10', 'Windows 11' }
+        return ("$name $($k.DisplayVersion)").Trim()
+    } catch { 'Windows' }
+}
+
+# ---- local storage (encrypted for this Windows user with DPAPI)
+$script:AuthEntropy = [System.Text.Encoding]::UTF8.GetBytes('SilvanBoost.Account.v1')
+function Save-Auth {
+    try {
+        New-Item -ItemType Directory -Path (Split-Path $AuthFile) -Force | Out-Null
+        $json = @{ user = $Auth.user; sid = $Auth.sid; license = $Auth.license; maxNow = [double]$Auth.maxNow; temp = [bool]$Auth.temp } | ConvertTo-Json -Compress
+        $b = [System.Security.Cryptography.ProtectedData]::Protect([System.Text.Encoding]::UTF8.GetBytes($json), $AuthEntropy, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
+        [System.IO.File]::WriteAllBytes($AuthFile, $b)
+    } catch { Write-Log "Account save error: $($_.Exception.Message)" }
+}
+function Load-Auth {
+    if (-not (Test-Path -LiteralPath $AuthFile)) { return }
+    try {
+        $b = [System.Security.Cryptography.ProtectedData]::Unprotect([System.IO.File]::ReadAllBytes($AuthFile), $AuthEntropy, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
+        $j = [System.Text.Encoding]::UTF8.GetString($b) | ConvertFrom-Json
+        $script:Auth.user = [string]$j.user; $script:Auth.sid = [string]$j.sid; $script:Auth.license = [string]$j.license
+        $script:Auth.maxNow = [double]$j.maxNow; $script:Auth.temp = [bool]$j.temp
+    } catch { Write-Log "Account file could not be read - sign in again." }
+}
+function Clear-Auth([switch]$KeepUser) {
+    $u = $Auth.user
+    $script:Auth = @{ user = ''; sid = ''; license = ''; maxNow = 0; temp = $false }
+    if ($KeepUser) { $script:Auth.user = $u }
+    try { Remove-Item -LiteralPath $AuthFile -Force -ErrorAction SilentlyContinue } catch { }
+}
+
+# returns @{ plan; until; exp } when the stored license is valid for this user + PC right now
+function Get-LicenseInfo {
+    $lic = [string]$Auth.license
+    if (-not $lic -or -not $LicOk) { return $null }
+    if (-not [SBLic]::Verify($AuthPubX, $AuthPubY, $lic)) { return $null }
+    try { $j = [SBLic]::Body($lic) | ConvertFrom-Json } catch { return $null }
+    if ([string]$j.u -ne [string]$Auth.user -or [string]$j.pc -ne $PcId) { return $null }
+    $now = Get-NowMs
+    if ($Auth.maxNow -and $now -lt ([double]$Auth.maxNow - 86400000)) { return $null }   # clock was turned back
+    if ($now -ge [double]$j.exp) { return $null }
+    $plan = [string]$j.plan; if ($plan -ne 'month') { $plan = 'life' }
+    @{ plan = $plan; until = [double]$j.until; exp = [double]$j.exp }
+}
+
+function Format-Day([double]$ms) {
+    if ($ms -le 0) { return '' }
+    [DateTimeOffset]::FromUnixTimeMilliseconds([long]$ms).LocalDateTime.ToString('dd.MM.yyyy')
+}
+function Get-DaysLeft([double]$until) { [math]::Max(0, [math]::Ceiling(($until - (Get-NowMs)) / 86400000)) }
+
+# ---- server calls (background runspace, result handled on the UI thread)
+function Invoke-AuthApi([string]$path, [hashtable]$body, [scriptblock]$done) {
+    if ($script:AuthCall) { return $false }
+    $ps = [PowerShell]::Create()
+    [void]$ps.AddScript({
+            param($url, $json, $ua)
+            try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
+            $resp = $null
+            try {
+                $req = [Net.HttpWebRequest]::Create($url)
+                $req.Method = 'POST'; $req.ContentType = 'application/json'; $req.UserAgent = $ua
+                $req.Timeout = 12000; $req.ReadWriteTimeout = 12000
+                $bytes = [Text.Encoding]::UTF8.GetBytes($json); $req.ContentLength = $bytes.Length
+                $st = $req.GetRequestStream(); $st.Write($bytes, 0, $bytes.Length); $st.Close()
+                $resp = $req.GetResponse()
+            } catch {
+                $ex = $_.Exception
+                while ($ex -and -not ($ex -is [Net.WebException])) { $ex = $ex.InnerException }
+                if ($ex -and $ex.Response) { $resp = $ex.Response } else { return @{ code = 0; text = '' } }
+            }
+            try {
+                $code = [int]$resp.StatusCode
+                $rd = New-Object IO.StreamReader($resp.GetResponseStream(), [Text.Encoding]::UTF8)
+                $t = $rd.ReadToEnd(); $rd.Close(); $resp.Close()
+                return @{ code = $code; text = $t }
+            } catch { return @{ code = 0; text = '' } }
+        }).AddArgument("$AuthApi$path").AddArgument(($body | ConvertTo-Json -Compress)).AddArgument("SilvanBoost/$AppVersion")
+    $script:AuthCall = @{ PS = $ps; H = $ps.BeginInvoke(); Done = $done }
+    if (-not $script:AuthCallTimer) {
+        $script:AuthCallTimer = New-Object System.Windows.Threading.DispatcherTimer
+        $AuthCallTimer.Interval = [TimeSpan]::FromMilliseconds(150)
+        $AuthCallTimer.Add_Tick({ Complete-AuthCall })
+    }
+    $AuthCallTimer.Start()
+    $true
+}
+
+function Complete-AuthCall {
+    $c = $script:AuthCall
+    if (-not $c -or -not $c.H.IsCompleted) { return }
+    $AuthCallTimer.Stop()
+    $script:AuthCall = $null
+    $r = @{ code = 0; data = $null }
+    try {
+        $o = @($c.PS.EndInvoke($c.H)) | Select-Object -Last 1
+        if ($o) { $r.code = [int]$o.code; if ($o.text) { try { $r.data = $o.text | ConvertFrom-Json } catch { } } }
+    } catch { }
+    try { $c.PS.Dispose() } catch { }
+    if ($r.code -gt 0) { $script:AuthLastOnline = Get-Date }
+    try { & $c.Done $r } catch { Write-Log "Account error: $($_.Exception.Message)" }
+}
+
+function Get-AuthErrorText($r) {
+    $e = ''; if ($r.data) { $e = [string]$r.data.error }
+    switch ($e) {
+        'wrong_login' { return 'Wrong username or password.' }
+        'wrong_pc' { return 'This account belongs to a different PC. It only works on the PC where it was created - ask Silvan to reset it.' }
+        'taken' { return 'This username is already taken. Try another one.' }
+        'bad_user' { return 'Username: 3 to 20 characters, only letters, numbers and _ . -' }
+        'bad_pass' { return 'Your password needs at least 6 characters.' }
+        'too_many' { return 'Too many tries. Wait a few minutes and try again.' }
+    }
+    if ($r.code -eq 0) { return "Can't reach the Silvan Boost server. Check your internet connection and try again." }
+    "Something went wrong on the server (error $($r.code)). Try again in a moment."
+}
+
+# ---- screens
+function Set-AuthText($el, [string]$t) { $el.Text = [SBLang]::Tr($t) }
+
+function Show-AuthPanel([string]$name) {
+    foreach ($p in 'Busy', 'Login', 'Reg', 'Wait', 'Ok', 'Exp', 'Lock') {
+        (Get-Variable -Name "Auth$($p)Panel" -ValueOnly).Visibility = $(if ($p -eq $name) { 'Visible' } else { 'Collapsed' })
+    }
+    $script:AuthPanel = $name
+    $AuthLayer.Visibility = 'Visible'
+    $AuthToast.Visibility = 'Collapsed'
+    if ($script:AuthUnlocked) { $script:AuthUnlocked = $false; Update-AuthCard }
+    # soft slide + fade of the card
+    $dur = New-Object System.Windows.Duration([TimeSpan]::FromMilliseconds(260))
+    $ease = New-Object System.Windows.Media.Animation.CubicEase; $ease.EasingMode = 'EaseOut'
+    $fade = New-Object System.Windows.Media.Animation.DoubleAnimation(0, 1, $dur); $fade.EasingFunction = $ease
+    $move = New-Object System.Windows.Media.Animation.DoubleAnimation(14, 0, $dur); $move.EasingFunction = $ease
+    $AuthCard.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fade)
+    $AuthCard.RenderTransform.BeginAnimation([System.Windows.Media.TranslateTransform]::YProperty, $move)
+    if ($name -eq 'Wait') {
+        $spin = New-Object System.Windows.Media.Animation.DoubleAnimation(0, 360, (New-Object System.Windows.Duration([TimeSpan]::FromMilliseconds(1100))))
+        $spin.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+        $AuthSpin.RenderTransform.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $spin)
+    } else { $AuthSpin.RenderTransform.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $null) }
+    if ($name -eq 'Ok') {
+        $pop = New-Object System.Windows.Media.Animation.DoubleAnimation(0.4, 1, (New-Object System.Windows.Duration([TimeSpan]::FromMilliseconds(420))))
+        $be = New-Object System.Windows.Media.Animation.BackEase; $be.Amplitude = 0.45; $be.EasingMode = 'EaseOut'; $pop.EasingFunction = $be
+        $AuthOkCheck.RenderTransform.BeginAnimation([System.Windows.Media.ScaleTransform]::ScaleXProperty, $pop)
+        $AuthOkCheck.RenderTransform.BeginAnimation([System.Windows.Media.ScaleTransform]::ScaleYProperty, $pop)
+    }
+    if ([SBLang]::Lang -eq 'de') { try { [void][SBLang]::Apply($AuthLayer) } catch { } }
+    switch ($name) {
+        'Login' { if ($AuthLUser.Text) { [void]$AuthLPass.Focus() } else { [void]$AuthLUser.Focus() } }
+        'Reg' { [void]$AuthRUser.Focus() }
+    }
+}
+
+function Show-AuthBusy([string]$title, [string]$err) {
+    Set-AuthText $AuthBusyTitle $title
+    $AuthBusyBar.Visibility = $(if ($err) { 'Collapsed' } else { 'Visible' })
+    $AuthBusyErr.Visibility = $(if ($err) { 'Visible' } else { 'Collapsed' })
+    $BtnAuthRetry.Visibility = $AuthBusyErr.Visibility
+    $BtnAuthBusyOut.Visibility = $AuthBusyErr.Visibility
+    if ($err) { Set-AuthText $AuthBusyErrTxt $err }
+    Show-AuthPanel 'Busy'
+}
+
+function Show-AuthLogin([string]$sub, [string]$err) {
+    if (-not $sub) { $sub = 'Sign in to use Silvan Boost.' }
+    Set-AuthText $AuthLoginSub $sub
+    $AuthLUser.Text = [string]$Auth.user
+    $AuthLPass.Password = ''
+    Set-AuthErr $AuthLErr $AuthLErrTxt $err
+    Show-AuthPanel 'Login'
+}
+
+function Set-AuthErr($box, $txt, [string]$err) {
+    if ($err) { Set-AuthText $txt $err; $box.Visibility = 'Visible' } else { $box.Visibility = 'Collapsed' }
+}
+
+function Show-AuthLocked([string]$kind) {
+    $AuthLockErr.Visibility = 'Collapsed'
+    switch ($kind) {
+        'wrong_pc' {
+            Set-AuthText $AuthLockTitle 'Wrong PC'
+            Set-AuthText $AuthLockSub 'This account was created on a different PC.'
+            Set-AuthText $AuthLockErrTxt 'Your account only works on the PC where you created it. New PC? Ask Silvan to reset your account, then sign in here again.'
+            $AuthLockErr.Visibility = 'Visible'
+        }
+        'rejected' {
+            Set-AuthText $AuthLockTitle 'Request declined'
+            Set-AuthText $AuthLockSub 'Silvan did not approve this account. If you think this is a mistake, message him.'
+        }
+        default {
+            Set-AuthText $AuthLockTitle 'This account is locked'
+            Set-AuthText $AuthLockSub 'Silvan has ended access for this account. If you think this is a mistake, message him.'
+        }
+    }
+    Show-AuthPanel 'Lock'
+}
+
+function Show-AuthOk($d) {
+    $plan = [string]$d.plan
+    Set-AuthText $AuthOkSub "Have fun with Silvan Boost, $($Auth.user)."
+    if ($plan -eq 'month') {
+        Set-AuthText $AuthOkPlan '1 month'
+        Set-AuthText $AuthOkPillTxt "until $(Format-Day ([double]$d.until))"
+        $AuthOkPill.Background = Get-Brush '#212ED47A'; $AuthOkPillTxt.Foreground = Get-Brush '#5BE39A'
+    } else {
+        Set-AuthText $AuthOkPlan 'Lifetime'
+        Set-AuthText $AuthOkPillTxt 'never ends'
+        $AuthOkPill.Background = Get-Brush '#24FF8A1F'; $AuthOkPillTxt.Foreground = Get-Brush '#FFB36B'
+    }
+    Show-AuthPanel 'Ok'
+}
+
+function Show-AuthExpired($d) {
+    $day = Format-Day ([double]$d.until)
+    if ($day) { Set-AuthText $AuthExpSub "Your month of Silvan Boost ended on $day. Message Silvan so he can extend it. The app opens again by itself." }
+    else { Set-AuthText $AuthExpSub 'Message Silvan so he can extend it. The app opens again by itself.' }
+    Show-AuthPanel 'Exp'
+}
+
+# account line in the user card (bottom left)
+function Update-AuthCard {
+    try {
+        if (-not $Auth.user -or -not $script:AuthUnlocked) { $UserPlan.Visibility = 'Collapsed'; return }
+        $dot = [string][char]0x00B7
+        $info = Get-LicenseInfo
+        if ($info -and $info.plan -eq 'month') {
+            $n = Get-DaysLeft $info.until
+            $left = $(if ($n -eq 1) { '1 day left' } else { "$n days left" })
+            $UserPlan.Text = [SBLang]::Tr("Account $($Auth.user) $dot $left")
+            $UserPlan.Foreground = Get-Brush $(if ($n -le 3) { '#FBBF24' } else { '#5BE39A' })
+        } else {
+            $UserPlan.Text = [SBLang]::Tr("Account $($Auth.user) $dot Lifetime")
+            $UserPlan.Foreground = Get-Brush '#FFB36B'
+        }
+        $UserPlan.Visibility = 'Visible'
+    } catch { }
+}
+
+function Show-AuthToastIfNeeded {
+    $info = Get-LicenseInfo
+    if (-not $info -or $info.plan -ne 'month') { $AuthToast.Visibility = 'Collapsed'; return }
+    $n = Get-DaysLeft $info.until
+    if ($n -gt 3) { $AuthToast.Visibility = 'Collapsed'; return }
+    $today = (Get-Date).ToString('yyyy-MM-dd')
+    if ($State.misc['AuthWarnDay'] -eq $today) { return }
+    $State.misc['AuthWarnDay'] = $today; Save-State
+    $msg = switch ($n) { 0 { 'Your plan ends today. Message Silvan if you want to extend it.' } 1 { 'Your plan ends in 1 day. Message Silvan if you want to extend it.' } default { "Your plan ends in $n days. Message Silvan if you want to extend it." } }
+    Set-AuthText $AuthToastTxt $msg
+    $AuthToast.Visibility = 'Visible'
+    $AuthToast.BeginAnimation([System.Windows.UIElement]::OpacityProperty, (New-Object System.Windows.Media.Animation.DoubleAnimation(0, 1, (New-Object System.Windows.Duration([TimeSpan]::FromMilliseconds(400))))))
+    Show-TrayTip 'Silvan Boost' ([SBLang]::Tr($msg))
+}
+
+# ---- polling while waiting / expired, and the periodic check while unlocked
+function Set-AuthPoll([string]$mode) {
+    $script:AuthPollMode = $mode
+    if (-not $script:AuthPollTimer) {
+        $script:AuthPollTimer = New-Object System.Windows.Threading.DispatcherTimer
+        $AuthPollTimer.Add_Tick({ try { Invoke-AuthPollTick } catch { Write-Log "Account check error: $_" } })
+    }
+    $AuthPollTimer.Stop()
+    if (-not $mode) { return }
+    $sec = switch ($mode) { 'wait' { 6 } 'exp' { 20 } default { 60 } }
+    $AuthPollTimer.Interval = [TimeSpan]::FromSeconds($sec)
+    $AuthPollTimer.Start()
+}
+
+function Invoke-AuthPollTick {
+    if ($script:AuthCall -or -not $Auth.sid) { return }
+    if ($AuthPollMode -eq 'run') {
+        Update-AuthCard
+        $info = Get-LicenseInfo
+        # online re-check every 6 hours, or right away once the offline license has run out
+        if ($info -and ((Get-Date) - $AuthLastOnline).TotalHours -lt 6) { return }
+        if (-not $info -and ((Get-Date) - $AuthLastOnline).TotalSeconds -lt 50 -and $AuthLastOnline -ne [datetime]::MinValue) { return }
+        Request-AuthStatus 'bg'
+        return
+    }
+    Request-AuthStatus 'poll'
+}
+
+$script:AuthReqMode = ''
+function Request-AuthStatus([string]$mode) {
+    if ($script:AuthCall) { return }
+    $script:AuthReqMode = $mode
+    [void](Invoke-AuthApi '/api/status' @{ user = $Auth.user; sid = $Auth.sid; pcid = $PcId } { param($r) Receive-AuthStatus $r $script:AuthReqMode })
+}
+
+# one place that decides what to show for a server reply
+function Receive-AuthStatus($r, [string]$mode) {
+    $d = $r.data
+    if ($r.code -eq 0 -or $r.code -eq 429 -or $r.code -ge 500 -or -not $d) {
+        if ($mode -eq 'bg' -or $mode -eq 'poll') {
+            # offline: keep going while the stored license is still valid
+            if ($script:AuthUnlocked -and -not (Get-LicenseInfo)) { Show-AuthBusy 'Checking your account...' (Get-AuthErrorText $r); Set-AuthPoll '' }
+            return
+        }
+        Show-AuthBusy 'Checking your account...' (Get-AuthErrorText $r)
+        return
+    }
+    $err = [string]$d.error
+    if ($err -eq 'signed_out') { Set-AuthPoll ''; Clear-Auth -KeepUser; Show-AuthLogin 'You were signed out. Please sign in again.'; return }
+    if ($err -eq 'wrong_pc') { Set-AuthPoll ''; Show-AuthLocked 'wrong_pc'; return }
+    if ($err) { if ($mode -eq 'initial') { Show-AuthBusy 'Checking your account...' (Get-AuthErrorText $r) }; return }
+    Receive-AuthState $d $mode
+}
+
+function Receive-AuthState($d, [string]$mode) {
+    switch ([string]$d.status) {
+        'approved' {
+            $script:Auth.license = [string]$d.license
+            $script:Auth.maxNow = [math]::Max([double]$Auth.maxNow, (Get-NowMs))
+            Save-Auth
+            if ($script:AuthUnlocked) { Update-AuthCard; Show-AuthToastIfNeeded; return }
+            if ($AuthWasWaiting -or $mode -eq 'login' -or $AuthPanel -eq 'Exp') { $script:AuthWasWaiting = $false; Set-AuthPoll ''; Show-AuthOk $d; return }
+            Unlock-App
+        }
+        'pending' {
+            $script:AuthWasWaiting = $true
+            Set-AuthText $AuthWaitTitle "Almost there, $($Auth.user)"
+            if ($AuthPanel -ne 'Wait') { Show-AuthPanel 'Wait' }
+            Set-AuthPoll 'wait'
+        }
+        'expired' {
+            $script:Auth.license = ''; Save-Auth
+            if ($AuthPanel -ne 'Exp') { Show-AuthExpired $d }
+            Set-AuthPoll 'exp'
+        }
+        'blocked' { Set-AuthPoll ''; $script:Auth.license = ''; Save-Auth; Show-AuthLocked 'blocked' }
+        'rejected' { Set-AuthPoll ''; $script:Auth.license = ''; Save-Auth; Show-AuthLocked 'rejected' }
+        default { if ($mode -eq 'initial') { Show-AuthBusy 'Checking your account...' (Get-AuthErrorText @{ code = 500; data = $null }) } }
+    }
+}
+
+function Unlock-App {
+    $script:AuthUnlocked = $true
+    $AuthSpin.RenderTransform.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $null)
+    $fade = New-Object System.Windows.Media.Animation.DoubleAnimation(1, 0, (New-Object System.Windows.Duration([TimeSpan]::FromMilliseconds(220))))
+    $fade.Add_Completed({ $AuthLayer.Visibility = 'Collapsed'; $AuthLayer.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $null); $AuthLayer.Opacity = 1 })
+    $AuthLayer.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fade)
+    $script:AuthPanel = ''
+    Update-AuthCard
+    Set-AuthPoll 'run'
+    if (-not $script:Started) {
+        # let the fade play, then run the normal start (scan, tour ...)
+        $t = New-Object System.Windows.Threading.DispatcherTimer
+        $t.Interval = [TimeSpan]::FromMilliseconds(240)
+        $t.Add_Tick({ param($s, $e) $s.Stop(); Start-Main; Update-AuthCard; Show-AuthToastIfNeeded })
+        $t.Start()
+    } else { Show-AuthToastIfNeeded }
+}
+
+function Invoke-AuthSignOut {
+    Set-AuthPoll ''
+    $script:AuthWasWaiting = $false
+    Clear-Auth -KeepUser
+    Show-AuthLogin
+}
+
+# ---- entry: decide before the main app starts
+function Start-AuthGate {
+    $script:PcId = Get-PcId
+    $AuthPcId.Text = $PcId
+    Load-Auth
+    if ($Auth.temp) { Clear-Auth -KeepUser }   # 'Stay signed in' was off last time
+    if ($Auth.sid -and (Get-LicenseInfo)) {
+        Unlock-App
+        Request-AuthStatus 'bg'
+        return
+    }
+    if ($Auth.sid) { Show-AuthBusy 'Checking your account...' ''; Request-AuthStatus 'initial'; return }
+    Show-AuthLogin
+}
+
+function Invoke-AuthLogin {
+    $u = $AuthLUser.Text.Trim(); $p = $AuthLPass.Password
+    if (-not $u -or -not $p) { Set-AuthErr $AuthLErr $AuthLErrTxt 'Enter your username and password.'; return }
+    Set-AuthErr $AuthLErr $AuthLErrTxt ''
+    $BtnAuthLogin.IsEnabled = $false; $BtnAuthLogin.Content = [SBLang]::Tr('Signing in...')
+    $ok = Invoke-AuthApi '/api/login' @{ user = $u; pass = $p; pcid = $PcId } {
+        param($r)
+        $BtnAuthLogin.IsEnabled = $true; $BtnAuthLogin.Content = [SBLang]::Tr('Sign in')
+        if ($r.code -eq 200 -and $r.data -and $r.data.sid) {
+            $script:Auth.user = [string]$r.data.user; $script:Auth.sid = [string]$r.data.sid
+            $script:Auth.temp = -not [bool]$AuthRemember.IsChecked
+            Save-Auth
+            $AuthLPass.Password = ''
+            Receive-AuthState $r.data 'login'
+            return
+        }
+        Set-AuthErr $AuthLErr $AuthLErrTxt (Get-AuthErrorText $r)
+    }
+    if (-not $ok) { $BtnAuthLogin.IsEnabled = $true; $BtnAuthLogin.Content = [SBLang]::Tr('Sign in') }
+}
+
+function Invoke-AuthRegister {
+    $u = $AuthRUser.Text.Trim(); $p = $AuthRPass.Password; $p2 = $AuthRPass2.Password
+    $msg = ''
+    if ($u -notmatch '^[A-Za-z0-9_.-]{3,20}$') { $msg = 'Username: 3 to 20 characters, only letters, numbers and _ . -' }
+    elseif ($p.Length -lt 6) { $msg = 'Your password needs at least 6 characters.' }
+    elseif ($p -cne $p2) { $msg = 'The two passwords are not the same.' }
+    if ($msg) { Set-AuthErr $AuthRErr $AuthRErrTxt $msg; return }
+    Set-AuthErr $AuthRErr $AuthRErrTxt ''
+    $BtnAuthReg.IsEnabled = $false; $BtnAuthReg.Content = [SBLang]::Tr('Creating account...')
+    $ok = Invoke-AuthApi '/api/register' @{ user = $u; pass = $p; pcid = $PcId; win = (Get-WinLabel); ver = $AppVersion } {
+        param($r)
+        $BtnAuthReg.IsEnabled = $true; $BtnAuthReg.Content = [SBLang]::Tr('Create account')
+        if ($r.code -eq 200 -and $r.data -and $r.data.sid) {
+            $script:Auth.user = $AuthRUser.Text.Trim(); $script:Auth.sid = [string]$r.data.sid; $script:Auth.temp = $false
+            Save-Auth
+            $AuthRPass.Password = ''; $AuthRPass2.Password = ''
+            Write-Log "Account $($Auth.user) created - waiting for approval."
+            Receive-AuthState $r.data 'login'
+            return
+        }
+        Set-AuthErr $AuthRErr $AuthRErrTxt (Get-AuthErrorText $r)
+    }
+    if (-not $ok) { $BtnAuthReg.IsEnabled = $true; $BtnAuthReg.Content = [SBLang]::Tr('Create account') }
+}
+
+function Show-AccountMenu {
+    $menu = New-Object System.Windows.Controls.ContextMenu
+    $menu.PlacementTarget = $UserCardBox
+    $menu.Placement = [System.Windows.Controls.Primitives.PlacementMode]::Top
+    $hd = New-Object System.Windows.Controls.MenuItem
+    $hd.Header = $(if ($Auth.user) { [SBLang]::Tr("Signed in as $($Auth.user)") } else { [SBLang]::Tr('Not signed in') })
+    $hd.IsEnabled = $false
+    [void]$menu.Items.Add($hd)
+    $mi = New-Object System.Windows.Controls.MenuItem
+    $mi.Header = [SBLang]::Tr('Sign out')
+    $mi.Add_Click({ Invoke-AuthSignOut })
+    [void]$menu.Items.Add($mi)
+    $menu.IsOpen = $true
+}
+
+function Initialize-AuthEvents {
+    try {
+        $img = Get-LogoImage 128
+        foreach ($n in 'AuthLogo0', 'AuthLogo1', 'AuthLogo2') { (Get-Variable -Name $n -ValueOnly).Source = $img }
+        $AuthLogoSmall.Source = Get-LogoImage 36
+    } catch { }
+    $BtnAuthLogin.Add_Click({ try { Invoke-AuthLogin } catch { Write-Log "Login error: $_" } })
+    $BtnAuthReg.Add_Click({ try { Invoke-AuthRegister } catch { Write-Log "Register error: $_" } })
+    $AuthLPass.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Return') { Invoke-AuthLogin } })
+    $AuthLUser.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Return') { [void]$AuthLPass.Focus() } })
+    $AuthRPass2.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Return') { Invoke-AuthRegister } })
+    $BtnAuthToReg.Add_Click({ Set-AuthErr $AuthRErr $AuthRErrTxt ''; $AuthRUser.Text = ''; Show-AuthPanel 'Reg' })
+    $BtnAuthToLogin.Add_Click({ Show-AuthLogin })
+    $BtnAuthGo.Add_Click({ Unlock-App })
+    $BtnAuthWaitOut.Add_Click({ Invoke-AuthSignOut })
+    $BtnAuthExpOut.Add_Click({ Invoke-AuthSignOut })
+    $BtnAuthLockOut.Add_Click({ Invoke-AuthSignOut })
+    $BtnAuthBusyOut.Add_Click({ Invoke-AuthSignOut })
+    $BtnAuthRetry.Add_Click({ Show-AuthBusy 'Checking your account...' ''; Request-AuthStatus 'initial' })
+    $BtnAuthToastX.Add_Click({ $AuthToast.Visibility = 'Collapsed' })
+    $BtnAuthMin.Add_Click({ $Window.WindowState = 'Minimized' })
+    $BtnAuthClose.Add_Click({ $script:ReallyQuit = $true; $Window.Close() })
+    $BtnAuthDe.Add_Click({ Set-AppLang 'de'; [void][SBLang]::Apply($AuthLayer) })
+    $BtnAuthEn.Add_Click({ Set-AppLang 'en' })
+    $UserCardBox.Add_MouseLeftButtonUp({ try { Show-AccountMenu } catch { } })
+}
+
+# normal app start - runs once the account is unlocked
+function Start-Main {
+        if ($script:Started) { return }
+        $script:Started = $true
+        try {
+            Show-Overlay 'Scanning your hardware...'
+            Run-Scan
+            try { Set-UserCard } catch { }
+            Show-Overlay 'Checking your current Windows settings...'
+            foreach ($t in $Tweaks) { $t.Active = Test-Tweak $t }
+            Show-Overlay 'Building optimizations...'
+            foreach ($t in $Tweaks) { [void]$TweakGrid.Children.Add((New-TweakCard $t)) }
+            foreach ($id in $FeaturedIds) { if ($TweakById.ContainsKey($id)) { [void]$FeatList.Children.Add((New-FeatRow $TweakById[$id])) } }
+            foreach ($t in $Tweaks) { Update-TweakUI $t }
+            Build-Chips
+            Build-ProChips
+            Apply-Filter
+            Update-Columns
+            Update-Stats
+            Update-BackupPage
+            try { Update-QuickPage } catch { }
+            try { $script:ProcBaseline = @(Get-Process).Count } catch { }
+            Write-Log "Silvan Boost $AppVersion started on $($HW.CpuName) / $($HW.GpuName)."
+            Start-Metrics
+            try { Initialize-Macros } catch { Write-Log "Macro engine error: $_" }
+            try { Update-BenchUI; Build-History } catch { }
+            Set-Status 'Ready - your PC has been scanned.'
+            if ($JustUpdated -and $State.misc.ContainsKey('UpdFrom')) { Show-UpdatedNotice }
+            Start-UpdateCheck
+        } catch {
+            Write-Log "Startup error: $($_.Exception.Message)"
+            Set-Status "Startup error: $($_.Exception.Message)" 'err'
+        }
+        Hide-Overlay
+        if ([SBLang]::Lang -eq 'de') { try { [void][SBLang]::Apply($Window) } catch { } }
+        if (-not $State.misc['TourDone']) { try { Start-Tour } catch { Write-Log "Tour error: $_" } }
+}
+
+
 # ------------------------------------------------------------------ build window + wire events
 try {
     $script:Window = [System.Windows.Markup.XamlReader]::Parse($Xaml)
@@ -11364,6 +12257,7 @@ try {
         if ($el) { Set-Variable -Name $nm -Value $el -Scope Script }
     }
     try { Import-LangData; $lg = [string]$State.misc['Lang']; if (-not $lg) { $lg = Get-DefaultLang }; Set-AppLang $lg -NoSave } catch { Write-Log "Language setup error: $_" }
+    try { Initialize-AuthEvents } catch { Write-Log "Account setup error: $_" }
     try { $Window.Icon = Get-LogoImage 256 } catch { }
     $AboutVer.Text = "Version $AppVersion  -  $($Tweaks.Count) optimizations and tools"
     $SideVer.Text = "v$AppVersion  -  FPS Optimizer"
@@ -11505,41 +12399,12 @@ try {
     $SearchBox.Add_TextChanged({ Apply-Filter })
 
     $Window.Add_ContentRendered({
-        if ($script:Started) { return }
-        $script:Started = $true
-        try {
-            Show-Overlay 'Scanning your hardware...'
-            Run-Scan
-            try { Set-UserCard } catch { }
-            Show-Overlay 'Checking your current Windows settings...'
-            foreach ($t in $Tweaks) { $t.Active = Test-Tweak $t }
-            Show-Overlay 'Building optimizations...'
-            foreach ($t in $Tweaks) { [void]$TweakGrid.Children.Add((New-TweakCard $t)) }
-            foreach ($id in $FeaturedIds) { if ($TweakById.ContainsKey($id)) { [void]$FeatList.Children.Add((New-FeatRow $TweakById[$id])) } }
-            foreach ($t in $Tweaks) { Update-TweakUI $t }
-            Build-Chips
-            Build-ProChips
-            Apply-Filter
-            Update-Columns
-            Update-Stats
-            Update-BackupPage
-            try { Update-QuickPage } catch { }
-            try { $script:ProcBaseline = @(Get-Process).Count } catch { }
-            Write-Log "Silvan Boost $AppVersion started on $($HW.CpuName) / $($HW.GpuName)."
-            Start-Metrics
-            try { Initialize-Macros } catch { Write-Log "Macro engine error: $_" }
-            try { Update-BenchUI; Build-History } catch { }
-            Set-Status 'Ready - your PC has been scanned.'
-            if ($JustUpdated -and $State.misc.ContainsKey('UpdFrom')) { Show-UpdatedNotice }
-            Start-UpdateCheck
-        } catch {
-            Write-Log "Startup error: $($_.Exception.Message)"
-            Set-Status "Startup error: $($_.Exception.Message)" 'err'
-        }
-        Hide-Overlay
-        if ([SBLang]::Lang -eq 'de') { try { [void][SBLang]::Apply($Window) } catch { } }
-        if (-not $State.misc['TourDone']) { try { Start-Tour } catch { Write-Log "Tour error: $_" } }
+        if ($script:GateStarted) { return }
+        $script:GateStarted = $true
+        try { Start-AuthGate } catch { Write-Log "Account error: $($_.Exception.Message)"; try { Show-AuthLogin } catch { } }
     })
+
+    $Window.Add_Closed({ try { if ($Auth.temp) { Clear-Auth } } catch { } })
 
     $Window.Add_Closed({
         $Sync.Run = $false
