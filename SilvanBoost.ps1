@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 <#
-    SILVAN BOOST - FPS Optimizer  v2.3
+    SILVAN BOOST - FPS Optimizer  v2.4
     Scans any Windows 10/11 PC and adapts the optimizations to its hardware
     (NVIDIA / AMD / Intel GPUs, Intel / AMD CPUs, desktops and laptops, SSD / HDD).
 
@@ -16,7 +16,7 @@ param([switch]$NoElevate, [switch]$JustUpdated, [string]$LauncherPath)
 
 $ErrorActionPreference = 'Continue'
 $script:AppName    = 'Silvan Boost'
-$script:AppVersion = '2.3.0'
+$script:AppVersion = '2.4.0'
 
 # ------------------------------------------------------------------ elevation
 $wid = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -586,6 +586,104 @@ public static class SBKeyName {
     [DllImport("user32.dll")] static extern uint MapVirtualKey(uint code, uint type);
     // character printed on the key in the current keyboard layout (0 if none)
     public static int Char(int vk) { return (int)(MapVirtualKey((uint)vk, 2) & 0x7FFF); }
+}
+'@
+
+Add-Type -ReferencedAssemblies @([System.Windows.Window].Assembly.Location, [System.Windows.UIElement].Assembly.Location, [System.Windows.DependencyObject].Assembly.Location, [System.Xaml.XamlReader].Assembly.Location) -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Text.RegularExpressions;
+using System.Windows;
+using System.Windows.Controls;
+
+// Runtime UI translation: walks the window and swaps known English texts for German (and back).
+public static class SBLang {
+    public static string Lang = "en";
+    static readonly Dictionary<string, string> de = new Dictionary<string, string>(StringComparer.Ordinal);
+    static readonly Dictionary<string, string> rev = new Dictionary<string, string>(StringComparer.Ordinal);
+    static readonly List<KeyValuePair<Regex, string>> pats = new List<KeyValuePair<Regex, string>>();
+
+    public static int Count { get { return de.Count; } }
+
+    public static void Add(string en, string ger) {
+        if (string.IsNullOrEmpty(en) || ger == null) return;
+        de[en] = ger;
+        if (!rev.ContainsKey(ger)) rev[ger] = en;
+    }
+
+    public static void AddPattern(string rx, string rep) {
+        pats.Add(new KeyValuePair<Regex, string>(new Regex(rx, RegexOptions.Compiled | RegexOptions.Singleline), rep));
+    }
+
+    static string ToDe(string s) {
+        string r;
+        if (de.TryGetValue(s, out r)) return r;
+        if (s.Length > 400) return null;
+        foreach (var p in pats) {
+            if (p.Key.IsMatch(s)) {
+                r = p.Key.Replace(s, p.Value);
+                if (r != s) { if (!rev.ContainsKey(r)) rev[r] = s; return r; }
+            }
+        }
+        return null;
+    }
+
+    // translate one string for the current language (used for messages, status texts and new UI)
+    public static string Tr(string s) {
+        if (string.IsNullOrEmpty(s)) return s;
+        string r;
+        if (Lang == "de") { r = ToDe(s); return r ?? s; }
+        if (rev.TryGetValue(s, out r)) return r;
+        return s;
+    }
+
+    static string Map(string s, bool toDe) {
+        if (string.IsNullOrEmpty(s)) return null;
+        if (toDe) return ToDe(s);
+        string r;
+        return rev.TryGetValue(s, out r) ? r : null;
+    }
+
+    public static int Apply(DependencyObject root) {
+        if (root == null) return 0;
+        int n = 0;
+        Walk(root, Lang == "de", ref n, 0);
+        return n;
+    }
+
+    static void Walk(DependencyObject d, bool toDe, ref int n, int depth) {
+        if (depth > 200) return;
+        string r;
+        var tb = d as TextBlock;
+        if (tb != null) {
+            if (tb.Inlines.Count <= 1) { r = Map(tb.Text, toDe); if (r != null) { tb.Text = r; n++; } }
+        } else {
+            var cc = d as ContentControl;
+            if (cc != null) {
+                var s = cc.Content as string;
+                if (s != null) { r = Map(s, toDe); if (r != null) { cc.Content = r; n++; } }
+            }
+            var hc = d as HeaderedItemsControl;
+            if (hc != null) {
+                var s = hc.Header as string;
+                if (s != null) { r = Map(s, toDe); if (r != null) { hc.Header = r; n++; } }
+            }
+            var tx = d as TextBox;
+            if (tx != null) {
+                var s = tx.Tag as string;
+                if (s != null) { r = Map(s, toDe); if (r != null) { tx.Tag = r; n++; } }
+            }
+        }
+        var fe = d as FrameworkElement;
+        if (fe != null) {
+            var tt = fe.ToolTip as string;
+            if (tt != null) { r = Map(tt, toDe); if (r != null) { fe.ToolTip = r; n++; } }
+        }
+        foreach (object c in LogicalTreeHelper.GetChildren(d)) {
+            var cd = c as DependencyObject;
+            if (cd != null) Walk(cd, toDe, ref n, depth + 1);
+        }
+    }
 }
 '@
 
@@ -2198,6 +2296,51 @@ $Xaml = @'
         </Setter.Value>
       </Setter>
     </Style>
+    <Style x:Key="TopChip" TargetType="Button">
+      <Setter Property="Foreground" Value="#C3CBDD"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Height" Value="28"/>
+      <Setter Property="MinWidth" Value="28"/>
+      <Setter Property="FontSize" Value="12.5"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bd" CornerRadius="14" Background="Transparent" BorderBrush="#22304D" BorderThickness="1" Padding="9,0">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="BorderBrush" Value="#FF8A1F"/>
+                <Setter Property="Foreground" Value="#FFB36B"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="LangCard" TargetType="RadioButton">
+      <Setter Property="Foreground" Value="#E8ECF5"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="GroupName" Value="tourlang"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Border x:Name="Bd" CornerRadius="12" Background="#0E1628" BorderBrush="#26334F" BorderThickness="1.5" Padding="16,14">
+              <ContentPresenter/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="BorderBrush" Value="#34446A"/></Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Bd" Property="BorderBrush" Value="#FF8A1F"/>
+                <Setter TargetName="Bd" Property="Background" Value="#1AFF8A1F"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
     <Style x:Key="OptRow" TargetType="RadioButton">
       <Setter Property="Foreground" Value="#E8ECF5"/>
       <Setter Property="Cursor" Value="Hand"/>
@@ -2772,6 +2915,13 @@ $Xaml = @'
             </Border>
           </StackPanel>
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="BtnLang" Style="{StaticResource TopChip}" Margin="0,0,8,0" VerticalAlignment="Center" ToolTip="Change language">
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Text="&#xE774;" FontFamily="{StaticResource IconFont}" FontSize="12" VerticalAlignment="Center"/>
+                <TextBlock x:Name="LangCode" Text="EN" FontSize="11.5" Margin="6,0,0,0" VerticalAlignment="Center"/>
+              </StackPanel>
+            </Button>
+            <Button x:Name="BtnHelp" Style="{StaticResource TopChip}" Content="?" Width="28" Padding="0" Margin="0,0,14,0" VerticalAlignment="Center" ToolTip="Help: show the tour"/>
             <Button x:Name="BtnMin" Style="{StaticResource TitleBtn}" Content="&#xE921;"/>
             <Button x:Name="BtnMax" Style="{StaticResource TitleBtn}" Content="&#xE922;"/>
             <Button x:Name="BtnClose" Style="{StaticResource CloseBtn}" Content="&#xE8BB;"/>
@@ -2787,7 +2937,7 @@ $Xaml = @'
               <TextBlock x:Name="HomeGreet" Text="Welcome back" Style="{StaticResource H1}"/>
               <TextBlock x:Name="HomeSub" Text="Scanning your PC..." Style="{StaticResource Sub}"/>
 
-              <Border Style="{StaticResource Card}" Margin="0,22,0,0" Padding="30,28">
+              <Border x:Name="HomeHero" Style="{StaticResource Card}" Margin="0,22,0,0" Padding="30,28">
                 <Grid>
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -4101,6 +4251,27 @@ $Xaml = @'
               </Border>
               <Border Style="{StaticResource Card}" Margin="0,14,0,0">
                 <StackPanel>
+                  <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                      <RadioButton x:Name="LangDe" Content="Deutsch" GroupName="aboutlang" Style="{StaticResource Chip}" Margin="0,0,6,0"/>
+                      <RadioButton x:Name="LangEn" Content="English" GroupName="aboutlang" Style="{StaticResource Chip}"/>
+                    </StackPanel>
+                    <StackPanel>
+                      <TextBlock Text="Language" Style="{StaticResource SectionTitle}"/>
+                      <TextBlock Text="Changes all text right away. No restart needed." Foreground="#9AA5BF" FontSize="12" TextWrapping="Wrap"/>
+                    </StackPanel>
+                  </DockPanel>
+                  <DockPanel Margin="0,16,0,0">
+                    <Button x:Name="BtnTourAgain" DockPanel.Dock="Right" Style="{StaticResource GhostBtn}" Content="Show the tour again" VerticalAlignment="Center"/>
+                    <StackPanel>
+                      <TextBlock Text="Beginner tour" FontWeight="SemiBold"/>
+                      <TextBlock Text="Six short steps, about one minute. Also on the ? button up top." Foreground="#9AA5BF" FontSize="12" TextWrapping="Wrap"/>
+                    </StackPanel>
+                  </DockPanel>
+                </StackPanel>
+              </Border>
+              <Border Style="{StaticResource Card}" Margin="0,14,0,0">
+                <StackPanel>
                   <TextBlock Text="Adapted to this PC" Style="{StaticResource SectionTitle}"/>
                   <TextBlock x:Name="AboutRig" Style="{StaticResource Sub}" Margin="0,8,0,0" Text="Silvan Boost scans the hardware every time it starts and adapts the optimizations: tweaks that cannot work on this PC are disabled, and tweaks that are a bad idea here are marked and skipped by the presets."/>
                 </StackPanel>
@@ -4154,6 +4325,132 @@ $Xaml = @'
             <TextBlock x:Name="StatusText" Text="Starting..." Foreground="#9AA5BF" VerticalAlignment="Center" FontSize="12" TextTrimming="CharacterEllipsis"/>
           </DockPanel>
         </Border>
+      </Grid>
+      <!-- BEGINNER TOUR -->
+      <Grid x:Name="TourLayer" Grid.ColumnSpan="2" Visibility="Collapsed">
+        <Path x:Name="TourDim" Fill="#BD050810"/>
+        <Canvas x:Name="TourCanvas" ClipToBounds="True">
+          <Border x:Name="TourPulse" BorderBrush="#FF8A1F" BorderThickness="2" CornerRadius="11" RenderTransformOrigin="0.5,0.5" IsHitTestVisible="False" Visibility="Collapsed"/>
+          <Border x:Name="TourRing" BorderBrush="#FF8A1F" BorderThickness="2" CornerRadius="11" IsHitTestVisible="False" Visibility="Collapsed">
+            <Border Margin="-6" BorderBrush="#2EFF8A1F" BorderThickness="4" CornerRadius="15"/>
+          </Border>
+          <Border x:Name="TourBubble" Width="360" CornerRadius="16" Background="#111A2E" BorderBrush="#2A3858" BorderThickness="1" Padding="20,16,20,18" Visibility="Collapsed">
+            <StackPanel>
+              <DockPanel>
+                <Button x:Name="BtnTourSkip" DockPanel.Dock="Right" Style="{StaticResource SmallBtn}" Content="Skip tour"/>
+                <TextBlock x:Name="TourStepTxt" Text="Step 1 of 6" FontSize="12" Foreground="#8C97B0" VerticalAlignment="Center"/>
+              </DockPanel>
+              <WrapPanel Margin="0,8,0,0">
+                <TextBlock x:Name="TourTitle" Text="" FontSize="19" FontWeight="SemiBold" FontFamily="Segoe UI Variable Display, Segoe UI" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                <Border x:Name="TourReco" CornerRadius="11" Background="#1F2ED47A" Padding="9,2" VerticalAlignment="Center" Visibility="Collapsed">
+                  <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="&#xE73E;" FontFamily="{StaticResource IconFont}" FontSize="10" Foreground="#5BE39A" VerticalAlignment="Center"/>
+                    <TextBlock Text="Recommended" FontSize="11.5" FontWeight="SemiBold" Foreground="#5BE39A" Margin="5,0,0,0"/>
+                  </StackPanel>
+                </Border>
+              </WrapPanel>
+              <TextBlock x:Name="TourText" Text="" FontSize="13.5" Foreground="#C3CBDD" TextWrapping="Wrap" Margin="0,6,0,0" LineHeight="20"/>
+              <DockPanel Margin="0,18,0,0">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                  <Button x:Name="BtnTourBack" Style="{StaticResource GhostBtn}" Content="Back" Padding="14,8"/>
+                  <Button x:Name="BtnTourNext" Style="{StaticResource PrimaryBtn}" Content="Next" Padding="18,8" Margin="8,0,0,0"/>
+                </StackPanel>
+                <StackPanel x:Name="TourDots" Orientation="Horizontal" VerticalAlignment="Center"/>
+              </DockPanel>
+            </StackPanel>
+          </Border>
+        </Canvas>
+
+        <Grid x:Name="TourWelcome" Background="#BD050810" Visibility="Collapsed">
+          <Border x:Name="TourWelcomeCard" Width="520" CornerRadius="20" Background="#111A2E" BorderBrush="#26334F" BorderThickness="1" Padding="40,34,40,26" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <StackPanel>
+              <Border Width="52" Height="52" CornerRadius="15" HorizontalAlignment="Left">
+                <Border.Background>
+                  <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                    <GradientStop Color="#FFB347" Offset="0"/>
+                    <GradientStop Color="#FF6A00" Offset="1"/>
+                  </LinearGradientBrush>
+                </Border.Background>
+                <TextBlock Text="S" FontFamily="Segoe UI Variable Display, Segoe UI" FontWeight="Black" FontSize="28" Foreground="#0A0F1C" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-2,0,0"/>
+              </Border>
+              <TextBlock Text="Welcome to Silvan Boost" FontSize="28" FontWeight="SemiBold" FontFamily="Segoe UI Variable Display, Segoe UI" Margin="0,18,0,0" TextWrapping="Wrap"/>
+              <TextBlock Text="Your PC is scanned. A short tour shows you the few buttons that matter most." FontSize="14.5" Foreground="#9AA5BF" TextWrapping="Wrap" Margin="0,8,0,0"/>
+              <TextBlock Text="LANGUAGE" Style="{StaticResource Label}" Margin="0,22,0,10"/>
+              <UniformGrid Columns="2">
+                <RadioButton x:Name="TourLangDe" Style="{StaticResource LangCard}" Margin="0,0,6,0">
+                  <StackPanel>
+                    <TextBlock Text="DE" FontSize="11.5" FontWeight="Bold" Foreground="#8C97B0"/>
+                    <TextBlock Text="Deutsch" FontSize="16" FontWeight="SemiBold" Margin="0,2,0,0"/>
+                  </StackPanel>
+                </RadioButton>
+                <RadioButton x:Name="TourLangEn" Style="{StaticResource LangCard}" Margin="6,0,0,0">
+                  <StackPanel>
+                    <TextBlock Text="EN" FontSize="11.5" FontWeight="Bold" Foreground="#8C97B0"/>
+                    <TextBlock Text="English" FontSize="16" FontWeight="SemiBold" Margin="0,2,0,0"/>
+                  </StackPanel>
+                </RadioButton>
+              </UniformGrid>
+              <TextBlock Text="Applies instantly. No restart needed." FontSize="12" Foreground="#7F8BA6" Margin="2,8,0,0"/>
+              <StackPanel Orientation="Horizontal" Margin="0,24,0,0">
+                <Button x:Name="BtnTourStart" Style="{StaticResource PrimaryBtn}" Content="Start the tour (1 min)" Padding="22,12"/>
+                <Button x:Name="BtnTourWelcomeSkip" Style="{StaticResource GhostBtn}" Content="Skip" Padding="20,12" Margin="10,0,0,0"/>
+              </StackPanel>
+              <TextBlock Text="You can open the tour again any time with the ? button." FontSize="12" Foreground="#7F8BA6" Margin="2,16,0,0" TextWrapping="Wrap"/>
+            </StackPanel>
+          </Border>
+        </Grid>
+
+        <Grid x:Name="TourDone" Background="#BD050810" Visibility="Collapsed">
+          <Border x:Name="TourDoneCard" Width="540" CornerRadius="20" Background="#111A2E" BorderBrush="#26334F" BorderThickness="1" Padding="40,34,40,26" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <StackPanel>
+              <Border x:Name="TourCheck" Width="60" Height="60" CornerRadius="30" Background="#242ED47A" BorderBrush="#802ED47A" BorderThickness="1.5" HorizontalAlignment="Left" RenderTransformOrigin="0.5,0.5">
+                <TextBlock Text="&#xE73E;" FontFamily="{StaticResource IconFont}" FontSize="24" Foreground="#2ED47A" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+              <TextBlock Text="You're all set" FontSize="28" FontWeight="SemiBold" FontFamily="Segoe UI Variable Display, Segoe UI" Margin="0,20,0,0"/>
+              <TextBlock Text="New here? Do these three things, in this order:" FontSize="14.5" Foreground="#9AA5BF" Margin="0,8,0,18" TextWrapping="Wrap"/>
+              <StackPanel x:Name="TourDoneList">
+                <Border CornerRadius="12" Background="#0E1526" BorderBrush="#1E2A45" BorderThickness="1" Padding="14,11" Margin="0,0,0,8">
+                  <DockPanel>
+                    <Border Width="30" Height="30" CornerRadius="15" Background="#24FF8A1F" BorderBrush="#59FF8A1F" BorderThickness="1" VerticalAlignment="Center">
+                      <TextBlock Text="1" FontWeight="Bold" FontSize="13.5" Foreground="#FFB36B" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel Margin="14,0,0,0">
+                      <TextBlock Text="Quick Boost on Competitive" FontSize="14.5" FontWeight="SemiBold"/>
+                      <TextBlock Text="Turns on the tweaks most people need." FontSize="12.5" Foreground="#9AA5BF" Margin="0,2,0,0"/>
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+                <Border CornerRadius="12" Background="#0E1526" BorderBrush="#1E2A45" BorderThickness="1" Padding="14,11" Margin="0,0,0,8">
+                  <DockPanel>
+                    <Border Width="30" Height="30" CornerRadius="15" Background="#24FF8A1F" BorderBrush="#59FF8A1F" BorderThickness="1" VerticalAlignment="Center">
+                      <TextBlock Text="2" FontWeight="Bold" FontSize="13.5" Foreground="#FFB36B" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel Margin="14,0,0,0">
+                      <TextBlock Text="Game Preset for your game" FontSize="14.5" FontWeight="SemiBold"/>
+                      <TextBlock Text="Pick your game, then click Optimize." FontSize="12.5" Foreground="#9AA5BF" Margin="0,2,0,0"/>
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+                <Border CornerRadius="12" Background="#0E1526" BorderBrush="#1E2A45" BorderThickness="1" Padding="14,11" Margin="0,0,0,8">
+                  <DockPanel>
+                    <Border Width="30" Height="30" CornerRadius="15" Background="#24FF8A1F" BorderBrush="#59FF8A1F" BorderThickness="1" VerticalAlignment="Center">
+                      <TextBlock Text="3" FontWeight="Bold" FontSize="13.5" Foreground="#FFB36B" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel Margin="14,0,0,0">
+                      <TextBlock Text="Restart your PC" FontSize="14.5" FontWeight="SemiBold"/>
+                      <TextBlock Text="Some changes only apply after a restart." FontSize="12.5" Foreground="#9AA5BF" Margin="0,2,0,0"/>
+                    </StackPanel>
+                  </DockPanel>
+                </Border>
+              </StackPanel>
+              <DockPanel Margin="0,18,0,0">
+                <Button x:Name="BtnTourDoneClose" DockPanel.Dock="Right" Style="{StaticResource GhostBtn}" Content="Close" Padding="22,12" Margin="10,0,0,0"/>
+                <Button x:Name="BtnTourOpenQuick" Style="{StaticResource PrimaryBtn}" Content="Open Quick Boost" Padding="22,12"/>
+              </DockPanel>
+              <TextBlock Text="Open the tour again any time with the ? button" FontSize="12" Foreground="#7F8BA6" Margin="0,16,0,0" HorizontalAlignment="Center"/>
+            </StackPanel>
+          </Border>
+        </Grid>
       </Grid>
     </Grid>
   </Border>
@@ -7076,18 +7373,18 @@ $script:NS = 'xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" 
 $script:Inv = [System.Globalization.CultureInfo]::InvariantCulture
 
 function Flush-UI { try { $Window.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Background, [Action] { }) } catch { } }
-function Show-Overlay([string]$m) { $OverlayText.Text = $m; $Overlay.Visibility = 'Visible'; Flush-UI }
+function Show-Overlay([string]$m) { $OverlayText.Text = [SBLang]::Tr($m); $Overlay.Visibility = 'Visible'; Flush-UI }
 function Hide-Overlay { $Overlay.Visibility = 'Collapsed' }
 function Set-Status([string]$m, [string]$kind = 'ok') {
     if (-not $script:StatusText) { return }
-    $StatusText.Text = $m
+    $StatusText.Text = [SBLang]::Tr($m)
     $c = '#2ED47A'
     if ($kind -eq 'busy') { $c = '#FF8A1F' } elseif ($kind -eq 'err') { $c = '#EF4444' }
     $StatusDot.Fill = Get-Brush $c
     Flush-UI
 }
 function Show-Msg($text, $title = 'Silvan Boost', $btn = 'OK', $icon = 'Information') {
-    [System.Windows.MessageBox]::Show($Window, $text, $title, $btn, $icon)
+    [System.Windows.MessageBox]::Show($Window, [SBLang]::Tr([string]$text), [SBLang]::Tr([string]$title), $btn, $icon)
 }
 
 function Set-Arc($Path, [double]$Pct, [double]$Size, [double]$Thick) {
@@ -7545,6 +7842,7 @@ function Show-Page([string]$p) {
     if ($p -eq 'Input' -and $script:Started) { Open-InputPage }
     if ($p -eq 'Macros' -and $script:Started) { try { Open-MacrosPage } catch { Write-Log "Macros page error: $_" } }
     elseif ($script:MacroInit) { try { Stop-KeyCapture; if ([SBMacro]::Recording) { Stop-MacroRecording } } catch { } }
+    if ([SBLang]::Lang -eq 'de') { try { [void][SBLang]::Apply($Window) } catch { } }
     if ($p -eq 'Live') { $LiveDot.Visibility = $(if ($LiveSession) { 'Visible' } else { 'Collapsed' }) }
 }
 
@@ -7687,6 +7985,7 @@ function Start-Metrics {
         try { Update-Live } catch { Write-Log "Live monitor error: $_" }
         try { Update-Metrics } catch { }
         try { Update-AppJobs } catch { }
+        if ([SBLang]::Lang -eq 'de') { try { [void][SBLang]::Apply($Window) } catch { } }
         if ($Sync.DevDone) { $Sync.DevDone = $false; try { Complete-DeviceDetect } catch { Write-Log "Device detection error: $_" } }
         if ($Sync.ArtDone) { $Sync.ArtDone = $false; try { foreach ($gg in $Games) { Set-GameArt $gg } } catch { } }
         if ($Sync.UpdState -eq 'done') { $Sync.UpdState = 'handled'; try { Complete-UpdateCheck } catch { Write-Log "Update check error: $_" } }
@@ -9057,6 +9356,917 @@ function Register-MacroEvents {
     $Window.Add_PreviewKeyDown({ param($s, $e) if ($CaptureMode) { try { Invoke-KeyCapture $e } catch { Write-Log "Key capture error: $_"; $script:CaptureMode = $null } } })
 }
 
+$script:LangData = @'
+S	Backup & Restore	Sicherung & Wiederherstellung
+S	Updates & About	Updates & Info
+S	Dashboard	\u00dcbersicht
+S	PC Scan	PC-Scan
+S	Optimize	Optimieren
+S	All Optimizations	Alle Optimierungen
+S	Processes	Prozesse
+S	Game Presets	Spiel-Presets
+S	Pro Settings	Pro-Einstellungen
+S	Live Monitor	Live-Monitor
+S	Network & Input	Netzwerk & Eingabe
+S	Ping Booster	Ping-Booster
+S	Input Lag	Input-Lag
+S	Macros	Makros
+S	NEW	NEU
+S	FPS Optimizer	FPS-Optimierer
+S	Welcome back	Willkommen zur\u00fcck
+S	Scanning your PC...	Dein PC wird gescannt...
+S	optimized	optimiert
+S	optimizations active	Optimierungen aktiv
+S	Checking your PC...	Dein PC wird gepr\u00fcft...
+S	All optimizations	Alle Optimierungen
+S	Right now	Gerade jetzt
+S	MEMORY	ARBEITSSPEICHER
+S	Next recommended step	N\u00e4chster empfohlener Schritt
+S	to check	zu pr\u00fcfen
+S	 to check	 zu pr\u00fcfen
+S	How?	Wie?
+S	Scanning...	Scan l\u00e4uft...
+S	Quick actions	Schnellaktionen
+S	Restore point	Wiederherstellungspunkt
+S	Clean temp	Temp leeren
+S	Flush DNS	DNS leeren
+S	Pick how far you want to go. Only optimizations that suit this PC are applied - and every one can be undone.	W\u00e4hle, wie weit du gehen willst. Es werden nur Optimierungen angewendet, die zu diesem PC passen - und jede l\u00e4sst sich r\u00fcckg\u00e4ngig machen.
+S	Safe	Sicher
+S	Zero-risk optimizations for every PC. Smoother and cleaner, nothing to think about.	Risikofreie Optimierungen f\u00fcr jeden PC. Fl\u00fcssiger und aufger\u00e4umter, ohne Nachdenken.
+S	Recommended	Empfohlen
+S	Lowest input lag and ping for online games: power, timers, network and input tuned for competitive play.	Niedrigster Input-Lag und Ping f\u00fcr Online-Spiele: Energie, Timer, Netzwerk und Eingabe f\u00fcr kompetitives Spielen eingestellt.
+S	Everything that improves performance, including small trade-offs. Advanced tweaks always stay manual.	Alles, was die Leistung verbessert, auch mit kleinen Kompromissen. Fortgeschrittene Tweaks bleiben immer manuell.
+S	Apply	Anwenden
+S	Show what will change	Zeigen, was sich \u00e4ndert
+S	Hide details	Details ausblenden
+S	Most effective single optimizations	Die wirksamsten einzelnen Optimierungen
+S	Macro recorder	Makro-Recorder
+S	Macros on	Makros an
+S	Give your mouse buttons and hotkeys new jobs - per app, switching automatically. Works while Silvan Boost is open (minimized is fine).	Gib deinen Maustasten und Hotkeys neue Aufgaben - pro App, mit automatischem Wechsel. Funktioniert, solange Silvan Boost offen ist (minimiert reicht).
+S	PROFILES	PROFILE
+S	+ Add profile	+ Profil hinzuf\u00fcgen
+S	Remove	Entfernen
+S	Switch profiles automatically	Profile automatisch wechseln
+S	MOUSE	MAUS
+S	Detecting...	Wird erkannt...
+S	Photo	Foto
+S	KEYBOARD	TASTATUR
+S	Mouse buttons	Maustasten
+S	Middle button	Mittlere Taste
+S	DPI button - set in your mouse's own software	DPI-Taste - in der Software deiner Maus einstellen
+S	Forward (side)	Vor (Seite)
+S	Back (side)	Zur\u00fcck (Seite)
+S	Default	Standard
+S	Left and right click stay as they are, so you can never lock yourself out. DPI and lighting are stored on the mouse - change them in your mouse's own software.	Links- und Rechtsklick bleiben wie sie sind, damit du dich nie aussperrst. DPI und Beleuchtung sind in der Maus gespeichert - \u00e4ndere sie in der Software deiner Maus.
+S	+ Add hotkey	+ Hotkey hinzuf\u00fcgen
+S	Keyboard hotkeys	Tastatur-Hotkeys
+S	Game profile: only 1:1 key remaps, Sniper mode and Disable are allowed. Anti-cheat can ban automated input like macros, text or key combos.	Spiel-Profil: Nur 1:1-Tastenbelegung, Sniper-Modus und Deaktivieren sind erlaubt. Anti-Cheat kann automatische Eingaben wie Makros, Text oder Tastenkombis bannen.
+S	Remap to a key	Auf eine Taste legen
+S	Key combination	Tastenkombination
+S	Type text	Text tippen
+S	Run a macro	Makro abspielen
+S	Open app or website	App oder Webseite \u00f6ffnen
+S	Media and volume	Medien und Lautst\u00e4rke
+S	Sniper mode (hold = slower pointer)	Sniper-Modus (halten = langsamerer Zeiger)
+S	Disable this button	Diese Taste deaktivieren
+S	Key to send	Zu sendende Taste
+S	Click, then press a key	Klicken, dann eine Taste dr\u00fccken
+S	Click, then press e.g. Ctrl + C	Klicken, dann z.B. Strg + C dr\u00fccken
+S	Text to type	Zu tippender Text
+S	Macro	Makro
+S	Open macro recorder	Makro-Recorder \u00f6ffnen
+S	Program, file or website	Programm, Datei oder Webseite
+S	Browse...	Durchsuchen...
+S	Media action	Medien-Aktion
+S	Next	Weiter
+S	Previous	Zur\u00fcck
+S	Volume +	Lautst\u00e4rke +
+S	Volume -	Lautst\u00e4rke -
+S	Mute	Stumm
+S	Pointer speed while held	Zeigertempo beim Halten
+S	Windows scale 1 - 20 (normal is 10). Your normal speed comes back when you let go.	Windows-Skala 1 - 20 (normal ist 10). Dein normales Tempo kommt zur\u00fcck, sobald du losl\u00e4sst.
+S	The button does nothing while this profile is active.	Die Taste macht nichts, solange dieses Profil aktiv ist.
+S	Save	Speichern
+S	Reset to default	Auf Standard zur\u00fccksetzen
+S	Remove hotkey	Hotkey entfernen
+S	Back to Macros	Zur\u00fcck zu Makros
+S	Record keys and clicks once, then put the macro on any button or hotkey. Changes save automatically.	Nimm Tasten und Klicks einmal auf und lege das Makro dann auf eine beliebige Taste oder einen Hotkey. \u00c4nderungen werden automatisch gespeichert.
+S	SAVED MACROS	GESPEICHERTE MAKROS
+S	+ New macro	+ Neues Makro
+S	Delete	L\u00f6schen
+S	Test	Testen
+S	Record	Aufnehmen
+S	Repeat:	Wiederholen:
+S	Once	Einmal
+S	While held	Solange gedr\u00fcckt
+S	Toggle on / off	An / aus schalten
+S	Record real delays	Echte Pausen aufnehmen
+S	Insert:	Einf\u00fcgen:
+S	+ Key	+ Taste
+S	+ Delay	+ Pause
+S	+ Left click	+ Linksklick
+S	No hotkeys yet. Click "+ Add hotkey" and press a key or combination, e.g. F13 or Ctrl + Alt + M.	Noch keine Hotkeys. Klicke "+ Hotkey hinzuf\u00fcgen" und dr\u00fccke eine Taste oder Kombination, z.B. F13 oder Strg + Alt + M.
+S	No macros yet - record one first.	Noch keine Makros - nimm zuerst eins auf.
+S	Hotkey removed.	Hotkey entfernt.
+S	Back to the normal button function.	Zur\u00fcck zur normalen Tastenfunktion.
+S	Press a key...  (Esc = cancel)	Dr\u00fccke eine Taste...  (Esc = abbrechen)
+S	Press the combination...  (Esc = cancel)	Dr\u00fccke die Kombination...  (Esc = abbrechen)
+S	Press a key...	Dr\u00fccke eine Taste...
+S	Choose what the hotkey should do, then click Save.	W\u00e4hle, was der Hotkey tun soll, und klicke dann auf Speichern.
+S	Choose a program (.exe)...	Programm ausw\u00e4hlen (.exe)...
+S	Nothing recorded yet.	Noch nichts aufgenommen.
+S	Click "+ New macro" to record your first one.	Klicke "+ Neues Makro", um dein erstes aufzunehmen.
+S	Stop	Stopp
+S	Recording - press keys or click in any window (keys typed here count too). Click Stop when done.	Aufnahme l\u00e4uft - dr\u00fccke Tasten oder klicke in einem beliebigen Fenster (Tasten hier z\u00e4hlen auch). Klicke auf Stopp, wenn du fertig bist.
+S	Macro trimmed to 1000 steps.	Makro auf 1000 Schritte gek\u00fcrzt.
+S	Nothing was recorded.	Es wurde nichts aufgenommen.
+S	Record or insert some steps first.	Nimm zuerst Schritte auf oder f\u00fcge welche ein.
+S	Switch to another window (e.g. Notepad) - the macro plays there in 3 seconds. It never plays inside a game or inside Silvan Boost.	Wechsle in ein anderes Fenster (z.B. Editor) - das Makro spielt dort in 3 Sekunden ab. In Spielen und in Silvan Boost spielt es nie.
+S	Silvan Boost itself cannot get a profile.	Silvan Boost selbst kann kein Profil bekommen.
+S	That image is too big (max 15 MB).	Das Bild ist zu gro\u00df (max. 15 MB).
+S	Active right now	Gerade aktiv
+S	Move up	Nach oben
+S	Move down	Nach unten
+S	Game	Spiel
+S	Everywhere else	\u00dcberall sonst
+S	Macros are switched off.	Makros sind ausgeschaltet.
+S	Plays once per press.	Spielt einmal pro Druck.
+S	Repeats as long as you hold the button.	Wiederholt, solange du die Taste h\u00e4ltst.
+S	First press starts it, second press stops it.	Erster Druck startet, zweiter Druck stoppt.
+S	Disabled	Deaktiviert
+S	Wireless receiver	Funk-Empf\u00e4nger
+S	Built-in	Eingebaut
+S	Rescan	Neu scannen
+S	PC Scanner	PC-Scanner
+S	Your detected hardware and a gaming health check.	Deine erkannte Hardware und ein Gaming-Gesundheitscheck.
+S	Gaming health check	Gaming-Gesundheitscheck
+S	Revert all	Alles zur\u00fccksetzen
+S	Apply recommended	Empfohlene anwenden
+S	Max performance	Maximale Leistung
+S	Optimizations	Optimierungen
+S	Search optimizations...	Optimierungen suchen...
+S	Search apps or publishers...	Apps oder Hersteller suchen...
+S	Moderate	Mittel
+S	Advanced	Fortgeschritten
+S	Permanent	Dauerhaft
+S	Action	Aktion
+S	Done	Erledigt
+S	Ready	Bereit
+S	Active	Aktiv
+S	Inactive	Inaktiv
+S	Careful	Vorsicht
+S	Why:	Warum:
+S	Fix:	L\u00f6sung:
+S	Run	Ausf\u00fchren
+S	Search again	Erneut suchen
+S	Add your own game	Eigenes Spiel hinzuf\u00fcgen
+S	Optimized	Optimiert
+S	Installed	Installiert
+S	Not installed	Nicht installiert
+S	Installed - Windows tweaks only	Installiert - nur Windows-Tweaks
+S	Not found on this PC - Windows tweaks still apply	Nicht auf diesem PC gefunden - Windows-Tweaks gelten trotzdem
+S	Pro settings	Pro-Einstellungen
+S	Undo	R\u00fcckg\u00e4ngig
+S	Searching for installed games (Steam, Epic, Riot, Battle.net, Roblox ...)	Suche nach installierten Spielen (Steam, Epic, Riot, Battle.net, Roblox ...)
+S	The in-game settings top players use for maximum FPS and visibility - pick a game.	Die Ingame-Einstellungen der Top-Spieler f\u00fcr maximale FPS und Sicht - w\u00e4hle ein Spiel.
+S	Current pro configs	Aktuelle Pro-Configs
+S	Optimize Windows for this game	Windows f\u00fcr dieses Spiel optimieren
+S	Compiled from public pro-settings guides (2025-2026). Every pro is a little different - use these as a strong starting point and adjust to taste.	Zusammengestellt aus \u00f6ffentlichen Pro-Settings-Guides (2025-2026). Jeder Profi ist etwas anders - nimm das als guten Startpunkt und passe es an.
+S	Best performance settings	Beste Performance-Einstellungen
+S	Auto-detect games	Spiele automatisch erkennen
+S	IDLE	BEREIT
+S	Waiting for a game... Start any game from Game Presets and it is detected automatically.	Warte auf ein Spiel... Starte ein Spiel aus den Spiel-Presets, es wird automatisch erkannt.
+S	frames per second	Bilder pro Sekunde
+S	slowest 1% of frames	langsamste 1% der Bilder
+S	time per frame	Zeit pro Bild
+S	STUTTERS	RUCKLER
+S	big frame spikes	gro\u00dfe Frame-Spitzen
+S	FRAMETIME GRAPH  -  flat and low = smooth, spikes = stutter	FRAMETIME-GRAPH  -  flach und niedrig = fl\u00fcssig, Spitzen = Ruckler
+S	Problems detected	Erkannte Probleme
+S	No problems so far. Problems appear here live while you play - with the cause and how to fix it.	Bisher keine Probleme. Probleme erscheinen hier live beim Spielen - mit Ursache und L\u00f6sung.
+S	LAST SESSION REPORT	LETZTER SESSION-BERICHT
+S	BACKGROUND LOAD	HINTERGRUNDLAST
+S	Shown while a game is running.	Wird angezeigt, w\u00e4hrend ein Spiel l\u00e4uft.
+S	HOW IT WORKS	SO FUNKTIONIERT ES
+S	Keep Silvan Boost open (minimized is fine) and start a game. It is detected automatically and measured live: FPS and frame times (via Intel PresentMon), CPU, GPU, temperatures, memory, drive and ping. When the game closes, Silvan Boost pops up with a session report. Nothing is injected into the game, so it is safe with anti-cheat.	Lass Silvan Boost offen (minimiert reicht) und starte ein Spiel. Es wird automatisch erkannt und live gemessen: FPS und Frametimes (\u00fcber Intel PresentMon), CPU, GPU, Temperaturen, Speicher, Laufwerk und Ping. Wenn das Spiel schlie\u00dft, zeigt Silvan Boost einen Session-Bericht. Es wird nichts ins Spiel injiziert - sicher mit Anti-Cheat.
+S	FPS counter not available	FPS-Z\u00e4hler nicht verf\u00fcgbar
+S	waiting for frames...	warte auf Bilder...
+S	RAM in use	RAM belegt
+S	measuring...	wird gemessen...
+S	Measuring...	Wird gemessen...
+S	Live GPU stats need an NVIDIA driver	Live-GPU-Werte brauchen einen NVIDIA-Treiber
+S	Run full test	Kompletten Test starten
+S	Boost ping	Ping boosten
+S	Live connection quality, game server test, bufferbloat test, DNS benchmark and every network optimization in one place.	Live-Verbindungsqualit\u00e4t, Spielserver-Test, Bufferbloat-Test, DNS-Benchmark und alle Netzwerk-Optimierungen an einem Ort.
+S	to 1.1.1.1	zu 1.1.1.1
+S	ping variation	Ping-Schwankung
+S	PACKET LOSS	PAKETVERLUST
+S	last 60 seconds	letzte 60 Sekunden
+S	your home network	dein Heimnetz
+S	CONNECTION	VERBINDUNG
+S	LIVE PING - LAST 60 SECONDS	LIVE-PING - LETZTE 60 SEKUNDEN
+S	internet	Internet
+S	your router	dein Router
+S	What to do	Was zu tun ist
+S	Network optimizations	Netzwerk-Optimierungen
+S	BUFFERBLOAT (PING UNDER LOAD)	BUFFERBLOAT (PING UNTER LAST)
+S	Run the full test	Kompletten Test starten
+S	Bufferbloat = how much your ping rises while the connection is busy. It is the #1 cause of lag spikes at home.	Bufferbloat = wie stark dein Ping steigt, wenn die Leitung ausgelastet ist. Das ist Ursache Nr. 1 f\u00fcr Lag-Spitzen zu Hause.
+S	Bufferbloat = how much your ping rises while the connection is busy (someone streaming or downloading). It is the #1 cause of lag spikes at home.	Bufferbloat = wie stark dein Ping steigt, wenn die Leitung ausgelastet ist (jemand streamt oder l\u00e4dt herunter). Das ist Ursache Nr. 1 f\u00fcr Lag-Spitzen zu Hause.
+S	GAME SERVER REGIONS	SPIELSERVER-REGIONEN
+S	Ping to the data centers many online games use.	Ping zu den Rechenzentren vieler Online-Spiele.
+S	Run the full test to measure.	Starte den kompletten Test zum Messen.
+S	Reset to automatic	Auf automatisch zur\u00fccksetzen
+S	DNS BENCHMARK	DNS-BENCHMARK
+S	Run the full test to compare DNS servers.	Starte den kompletten Test, um DNS-Server zu vergleichen.
+S	Ping tools	Ping-Werkzeuge
+S	Trace route	Route verfolgen
+S	Find the lag (route analysis)	Lag finden (Routenanalyse)
+S	Measures every station between your PC and the internet and shows WHERE the delay or packet loss starts: your home network, your provider or the internet.	Misst jede Station zwischen deinem PC und dem Internet und zeigt, WO Verz\u00f6gerung oder Paketverlust beginnt: dein Heimnetz, dein Anbieter oder das Internet.
+S	Test servers	Server testen
+S	CS2 / Valve server ping	CS2- / Valve-Server-Ping
+S	Pings every Valve data center (CS2, Deadlock, Dota 2) and shows the closest ones.	Pingt jedes Valve-Rechenzentrum (CS2, Deadlock, Dota 2) und zeigt die n\u00e4chsten.
+S	Reset	Zur\u00fccksetzen
+S	Run test	Test starten
+S	MTU test	MTU-Test
+S	Finds the biggest packet your connection can carry. DSL and some fiber lines need a smaller MTU to avoid split packets.	Findet das gr\u00f6\u00dfte Paket, das deine Leitung \u00fcbertragen kann. DSL und manche Glasfaserleitungen brauchen eine kleinere MTU, damit Pakete nicht geteilt werden.
+S	Scan now	Jetzt scannen
+S	Apps using your internet	Apps, die dein Internet nutzen
+S	Shows which programs are connected to the internet right now and how busy they are - close the ones that eat your bandwidth.	Zeigt, welche Programme gerade mit dem Internet verbunden sind und wie stark - schlie\u00dfe die, die deine Bandbreite fressen.
+S	Game Network Mode	Spiel-Netzwerkmodus
+S	When the Live Monitor detects a game, Windows Update downloads (BITS, Delivery Optimization) and OneDrive are paused - and resumed when you close the game.	Wenn der Live-Monitor ein Spiel erkennt, werden Windows-Update-Downloads (BITS, \u00dcbermittlungsoptimierung) und OneDrive pausiert - und nach dem Spiel fortgesetzt.
+S	Pause background downloads while a game runs	Hintergrund-Downloads pausieren, w\u00e4hrend ein Spiel l\u00e4uft
+S	Scan Wi-Fi	WLAN scannen
+S	Wi-Fi channel check	WLAN-Kanal-Check
+S	Scans nearby Wi-Fi networks and tells you which channel is the least crowded for your router.	Scannt WLANs in der N\u00e4he und sagt dir, welcher Kanal f\u00fcr deinen Router am wenigsten belegt ist.
+S	Full reset	Komplett zur\u00fccksetzen
+S	Quick fix	Schnelle Reparatur
+S	Network repair	Netzwerk-Reparatur
+S	Fix a broken or slow connection. Quick fix is harmless; full reset restores Windows network defaults (restart needed).	Repariert eine kaputte oder langsame Verbindung. Schnelle Reparatur ist harmlos; Komplett zur\u00fccksetzen stellt die Windows-Netzwerkstandards wieder her (Neustart n\u00f6tig).
+S	no internet route	keine Internetverbindung
+S	Wi-Fi	WLAN
+S	Ethernet	LAN
+S	lost	verloren
+S	router does not answer ping	Router antwortet nicht auf Ping
+S	Ping under load: lost	Ping unter Last: verloren
+S	The load test could not reach speed.cloudflare.com - result not reliable.	Der Lasttest konnte speed.cloudflare.com nicht erreichen - Ergebnis nicht zuverl\u00e4ssig.
+S	No app is connected to the internet right now.	Gerade ist keine App mit dem Internet verbunden.
+S	Sorted by current activity (network + disk). Red = heavy traffic right now - close or pause it while you play.	Sortiert nach aktueller Aktivit\u00e4t (Netzwerk + Festplatte). Rot = gerade viel Verkehr - beim Spielen schlie\u00dfen oder pausieren.
+S	Windows returned no nearby networks. On Windows 11 the Wi-Fi scan needs Location access: Settings > Privacy & security > Location > on (and allow desktop apps). If you turned off location with Silvan Boost, turn it on for the scan.	Windows hat keine WLANs in der N\u00e4he gefunden. Unter Windows 11 braucht der WLAN-Scan den Standortzugriff: Einstellungen > Datenschutz & Sicherheit > Standort > ein (und Desktop-Apps erlauben). Falls du den Standort mit Silvan Boost ausgeschaltet hast, schalte ihn f\u00fcr den Scan ein.
+S	The test could not run (ping is blocked on this connection).	Der Test konnte nicht laufen (Ping ist auf dieser Verbindung blockiert).
+S	Network stack reset - restart your PC to finish.	Netzwerk zur\u00fcckgesetzt - starte deinen PC neu, um abzuschlie\u00dfen.
+S	Adapter MTU restored to its previous value.	Adapter-MTU auf den vorherigen Wert zur\u00fcckgesetzt.
+S	Checking your connection...	Deine Verbindung wird gepr\u00fcft...
+S	Measuring ping to your router and the internet...	Ping zu Router und Internet wird gemessen...
+S	Ping test finished.	Ping-Test fertig.
+S	Flushing DNS cache...	DNS-Cache wird geleert...
+S	Ping boost applied	Ping-Boost angewendet
+S	Downloading the Valve server list...	Valve-Serverliste wird geladen...
+S	Looking for apps that use your internet...	Suche nach Apps, die dein Internet nutzen...
+S	Testing the largest packet size your connection allows...	Gr\u00f6\u00dfte m\u00f6gliche Paketgr\u00f6\u00dfe wird getestet...
+S	Repairing the connection...	Verbindung wird repariert...
+S	Resetting the network stack...	Netzwerk wird zur\u00fcckgesetzt...
+S	DNS reset to your previous / automatic setting	DNS auf vorherige / automatische Einstellung zur\u00fcckgesetzt
+S	No internet connection found.	Keine Internetverbindung gefunden.
+S	Use	Nutzen
+S	Max input response	Maximale Eingabe-Reaktion
+S	Get every click and mouse movement onto the screen as fast as possible.	Bringt jeden Klick und jede Mausbewegung so schnell wie m\u00f6glich auf den Bildschirm.
+S	MOUSE POLLING RATE	MAUS-POLLINGRATE
+S	not tested yet	noch nicht getestet
+S	REFRESH RATE	BILDWIEDERHOLRATE
+S	INPUT OPTIMIZATIONS	INPUT-OPTIMIERUNGEN
+S	PC LATENCY	PC-LATENZ
+S	start a game to measure	starte ein Spiel zum Messen
+S	MOUSE POLLING RATE TEST	MAUS-POLLINGRATE-TEST
+S	Start test	Test starten
+S	Click Start, then move your mouse fast in circles for 5 seconds.	Klicke auf Start und bewege die Maus dann 5 Sekunden lang schnell im Kreis.
+S	Checklist	Checkliste
+S	Input optimizations	Input-Optimierungen
+S	Driver & game settings	Treiber- & Spiel-Einstellungen
+S	WHAT THE NUMBERS MEAN	WAS DIE ZAHLEN BEDEUTEN
+S	PC latency is the time from your click or mouse movement reaching the PC until the new image is shown - measured live in-game with Intel PresentMon. Under 25 ms is excellent. Your mouse and monitor add a few ms on top. Polling rate is how often your mouse reports its position: 1000 Hz = every 1 ms.	PC-Latenz ist die Zeit, bis dein Klick oder deine Mausbewegung als neues Bild erscheint - live im Spiel gemessen mit Intel PresentMon. Unter 25 ms ist hervorragend. Maus und Monitor kommen noch ein paar ms dazu. Die Pollingrate ist, wie oft deine Maus ihre Position meldet: 1000 Hz = jede 1 ms.
+S	Move your mouse fast in circles now...	Bewege deine Maus jetzt schnell im Kreis...
+S	No movement detected - click Start and keep moving the mouse for the whole 5 seconds.	Keine Bewegung erkannt - klicke auf Start und bewege die Maus die ganzen 5 Sekunden.
+S	measured	gemessen
+S	last measured in a game	zuletzt in einem Spiel gemessen
+S	Max input response applied	Maximale Eingabe-Reaktion angewendet
+S	Refresh	Aktualisieren
+S	Reduce processes	Prozesse reduzieren
+S	Process Reducer	Prozess-Reduzierer
+S	PROCESSES	PROZESSE
+S	running right now	laufen gerade
+S	SERVICES RUNNING	LAUFENDE DIENSTE
+S	Windows services	Windows-Dienste
+S	SVCHOST PROCESSES	SVCHOST-PROZESSE
+S	service host processes	Diensthost-Prozesse
+S	across all processes	\u00fcber alle Prozesse
+S	Reduce processes = turns off unneeded services and background features, groups Windows services and closes the apps switched on below. Windows itself always needs around 100+ processes - those are protected and never touched.	Prozesse reduzieren = schaltet unn\u00f6tige Dienste und Hintergrundfunktionen aus, gruppiert Windows-Dienste und schlie\u00dft die unten eingeschalteten Apps. Windows selbst braucht immer etwa 100+ Prozesse - die sind gesch\u00fctzt und werden nie angefasst.
+S	Close selected (0)	Ausgew\u00e4hlte schlie\u00dfen (0)
+S	Running apps you can close	Laufende Apps, die du schlie\u00dfen kannst
+S	Windows, drivers, anti-cheat and the game you are playing are hidden and protected.	Windows, Treiber, Anti-Cheat und dein laufendes Spiel sind ausgeblendet und gesch\u00fctzt.
+S	Startup apps	Autostart-Apps
+S	can be grouped - see Reduce	kann gruppiert werden - siehe Reduzieren
+S	grouped after next restart	nach dem n\u00e4chsten Neustart gruppiert
+S	No startup apps found.	Keine Autostart-Apps gefunden.
+S	See what is running and push the number of processes down as far as is safe.	Sieh, was l\u00e4uft, und dr\u00fcck die Zahl der Prozesse so weit runter, wie es sicher ist.
+S	Startup app changed - takes effect at next sign-in.	Autostart-App ge\u00e4ndert - wirkt ab der n\u00e4chsten Anmeldung.
+S	Counting processes...	Prozesse werden gez\u00e4hlt...
+S	Closing background apps...	Hintergrund-Apps werden geschlossen...
+S	Select none	Keine ausw\u00e4hlen
+S	Select recommended	Empfohlene ausw\u00e4hlen
+S	Remove selected (0)	Ausgew\u00e4hlte entfernen (0)
+S	Bloatware cleaner	Bloatware-Entferner
+S	All installed apps	Alle installierten Apps
+S	Recommended downloads	Empfohlene Downloads
+S	Only preinstalled apps that are on this PC are shown. Switch on every app you want to remove - removed apps can be reinstalled from the Microsoft Store.	Es werden nur vorinstallierte Apps angezeigt, die auf diesem PC sind. Schalte jede App ein, die du entfernen willst - entfernte Apps kannst du im Microsoft Store wieder installieren.
+S	All	Alle
+S	Programs	Programme
+S	Store apps	Store-Apps
+S	Sort: name	Sortieren: Name
+S	Sort: size	Sortieren: Gr\u00f6\u00dfe
+S	Sort: newest	Sortieren: Neueste
+S	No unnecessary apps found - this PC is already clean.	Keine unn\u00f6tigen Apps gefunden - dieser PC ist schon sauber.
+S	Installing...	Wird installiert...
+S	Reinstall	Neu installieren
+S	Install failed - use Website	Installation fehlgeschlagen - nutze Webseite
+S	Install downloads the official version through winget, the Windows package manager, and installs it silently. Website opens the official download page.	Installieren l\u00e4dt die offizielle Version \u00fcber winget (den Windows-Paketmanager) und installiert sie still. Webseite \u00f6ffnet die offizielle Download-Seite.
+S	winget (Windows package manager) was not found on this PC - use Website to download, or install "App Installer" from the Microsoft Store to enable one-click installs.	winget (Windows-Paketmanager) wurde auf diesem PC nicht gefunden - nutze Webseite zum Herunterladen oder installiere "App-Installer" aus dem Microsoft Store f\u00fcr Ein-Klick-Installationen.
+S	Every program and Store app on this PC - search, sort and uninstall.	Jedes Programm und jede Store-App auf diesem PC - suchen, sortieren und deinstallieren.
+S	Free tools that help with performance, monitoring and drivers - one click to install.	Kostenlose Tools f\u00fcr Leistung, \u00dcberwachung und Treiber - mit einem Klick installiert.
+S	in use	in Benutzung
+S	Program	Programm
+S	Store app	Store-App
+S	Keep - needed by games/drivers	Behalten - von Spielen/Treibern gebraucht
+S	Uninstall	Deinstallieren
+S	Website	Webseite
+S	Install	Installieren
+S	Close	Schlie\u00dfen
+S	Looking for removable apps...	Suche nach entfernbaren Apps...
+S	Reading installed apps...	Installierte Apps werden gelesen...
+S	Checking installed apps...	Installierte Apps werden gepr\u00fcft...
+S	Every change Silvan Boost makes is recorded, so you can always go back.	Jede \u00c4nderung von Silvan Boost wird gespeichert, damit du immer zur\u00fcck kannst.
+S	Create restore point	Wiederherstellungspunkt erstellen
+S	Open System Restore	Systemwiederherstellung \u00f6ffnen
+S	System Restore point	Systemwiederherstellungspunkt
+S	Revert all optimizations	Alle Optimierungen zur\u00fccksetzen
+S	Undo everything	Alles r\u00fcckg\u00e4ngig machen
+S	Puts every active optimization back to the exact value your PC had before. Removed apps can be reinstalled from the Microsoft Store.	Setzt jede aktive Optimierung genau auf den Wert zur\u00fcck, den dein PC vorher hatte. Entfernte Apps kannst du im Microsoft Store wieder installieren.
+S	Open backup folder	Sicherungsordner \u00f6ffnen
+S	Silvan Boost backup	Silvan-Boost-Sicherung
+S	Activity log	Aktivit\u00e4tsprotokoll
+S	No restore point created yet. One is created automatically before the first change of every session.	Noch kein Wiederherstellungspunkt erstellt. Vor der ersten \u00c4nderung jeder Sitzung wird automatisch einer erstellt.
+S	active (advanced not counted)	aktiv (fortgeschrittene nicht gez\u00e4hlt)
+S	About Silvan Boost	\u00dcber Silvan Boost
+S	Check for updates	Nach Updates suchen
+S	Install updates automatically	Updates automatisch installieren
+S	Silvan Boost checks for a new version at every start. When off, it asks first.	Silvan Boost sucht bei jedem Start nach einer neuen Version. Wenn aus, fragt es vorher.
+S	Adapted to this PC	An diesen PC angepasst
+S	Silvan Boost scans the hardware every time it starts and adapts the optimizations: tweaks that cannot work on this PC are disabled, and tweaks that are a bad idea here are marked and skipped by the presets.	Silvan Boost scannt bei jedem Start die Hardware und passt die Optimierungen an: Tweaks, die auf diesem PC nicht funktionieren, sind deaktiviert, und Tweaks, die hier keine gute Idee sind, werden markiert und von den Presets \u00fcbersprungen.
+S	What to expect	Was du erwarten kannst
+S	Windows tweaks mostly improve consistency: fewer stutters, steadier 1% lows, snappier input. The biggest raw FPS gains on a PC like yours come from the PC Scanner checks: XMP/EXPO enabled for your RAM, Resizable BAR on, the monitor at its highest refresh rate, an up-to-date BIOS and NVIDIA driver, and NVIDIA Reflex in-game.	Windows-Tweaks verbessern vor allem die Gleichm\u00e4\u00dfigkeit: weniger Ruckler, stabilere 1% Lows, direktere Eingabe. Die gr\u00f6\u00dften FPS-Gewinne auf einem PC wie deinem kommen aus den PC-Scanner-Checks: XMP/EXPO f\u00fcr den RAM an, Resizable BAR an, der Monitor auf h\u00f6chster Bildwiederholrate, aktuelles BIOS und NVIDIA-Treiber und NVIDIA Reflex im Spiel.
+S	Safety	Sicherheit
+S	A System Restore point is created before the first change of each session, and every original value is saved to C:\\ProgramData\\SilvanBoost\\backup.json. Silvan Boost deliberately does not disable Microsoft Defender, Windows Update or CPU security mitigations - they cost almost no FPS and protect your PC. Advanced tweaks ask for confirmation first.	Vor der ersten \u00c4nderung jeder Sitzung wird ein Systemwiederherstellungspunkt erstellt, und jeder Originalwert wird in C:\\ProgramData\\SilvanBoost\\backup.json gespeichert. Silvan Boost schaltet Microsoft Defender, Windows Update und CPU-Sicherheitsfunktionen absichtlich nicht ab - sie kosten fast keine FPS und sch\u00fctzen deinen PC. Fortgeschrittene Tweaks fragen vorher nach.
+S	Update available	Update verf\u00fcgbar
+S	Restart needed to finish some optimizations	Neustart n\u00f6tig, um einige Optimierungen abzuschlie\u00dfen
+S	Restart now	Jetzt neu starten
+S	Starting...	Startet...
+S	Automatic updates are not set up in this build.	Automatische Updates sind in dieser Version nicht eingerichtet.
+S	Checking for updates...	Suche nach Updates...
+S	Update information is invalid.	Update-Informationen sind ung\u00fcltig.
+S	Update failed - see the activity log.	Update fehlgeschlagen - siehe Aktivit\u00e4tsprotokoll.
+S	Restart	Neu starten
+S	Creating a System Restore point - this can take up to a minute...	Systemwiederherstellungspunkt wird erstellt - das kann bis zu einer Minute dauern...
+S	Creating a System Restore point before the first change...	Vor der ersten \u00c4nderung wird ein Systemwiederherstellungspunkt erstellt...
+S	Creating a System Restore point...	Systemwiederherstellungspunkt wird erstellt...
+S	System Restore point created.	Systemwiederherstellungspunkt erstellt.
+S	Restore point failed.	Wiederherstellungspunkt fehlgeschlagen.
+S	Scanning your hardware...	Deine Hardware wird gescannt...
+S	Scan complete.	Scan abgeschlossen.
+S	Checking your current Windows settings...	Deine aktuellen Windows-Einstellungen werden gepr\u00fcft...
+S	Building optimizations...	Optimierungen werden vorbereitet...
+S	Ready - your PC has been scanned.	Bereit - dein PC wurde gescannt.
+S	All optimizations reverted.	Alle Optimierungen zur\u00fcckgesetzt.
+S	Everything in this preset is already active.	Alles aus diesem Preset ist schon aktiv.
+S	No optimizations are active.	Keine Optimierungen aktiv.
+S	All optimizations were reverted. Restart your PC to finish.	Alle Optimierungen wurden zur\u00fcckgesetzt. Starte deinen PC neu, um abzuschlie\u00dfen.
+S	Windows could not create a restore point. Make sure System Protection is turned on for your system drive (search "Create a restore point" in Start).	Windows konnte keinen Wiederherstellungspunkt erstellen. Pr\u00fcfe, ob der Computerschutz f\u00fcr dein Systemlaufwerk eingeschaltet ist (im Start nach "Wiederherstellungspunkt erstellen" suchen).
+S	Restart your PC now? Save your work first.	PC jetzt neu starten? Speichere vorher deine Arbeit.
+S	Your PC is fully optimized	Dein PC ist voll optimiert
+S	All safe optimizations are on. Try the Competitive preset or the Network & Input tools for even lower latency.	Alle sicheren Optimierungen sind an. Probiere das Competitive-Preset oder die Netzwerk-&-Eingabe-Tools f\u00fcr noch weniger Latenz.
+S	Show me	Zeig's mir
+S	Tune this PC for competitive play	Diesen PC f\u00fcr Competitive einstellen
+S	Open Quick Boost	Quick Boost \u00f6ffnen
+S	Everything looks great	Alles sieht super aus
+S	Your hardware is healthy and all recommended optimizations are on. Enjoy the game.	Deine Hardware ist in Ordnung und alle empfohlenen Optimierungen sind an. Viel Spa\u00df beim Zocken.
+S	Ultimate Performance Power Plan	Energiesparplan Ultimative Leistung
+S	Unlocks and activates the hidden Ultimate Performance plan so your CPU stops down-clocking and parking cores between frames. Smoother frame times, higher idle power draw.	Schaltet den versteckten Plan "Ultimative Leistung" frei, damit deine CPU zwischen den Bildern nicht runtertaktet und keine Kerne parkt. Gleichm\u00e4\u00dfigere Frametimes, etwas mehr Stromverbrauch im Leerlauf.
+S	Disable Power Throttling	Energiedrosselung aus
+S	Stops Windows from throttling background processes (EcoQoS). Keeps launchers, overlays, Discord and voice chat at full speed instead of being pushed to slow states.	Verhindert, dass Windows Hintergrundprozesse drosselt (EcoQoS). Launcher, Overlays, Discord und Voice-Chat laufen mit voller Geschwindigkeit.
+S	Hardware-Accelerated GPU Scheduling	Hardwarebeschleunigte GPU-Planung
+S	Lets your graphics card schedule its own video memory instead of the CPU doing it. Lowers CPU overhead and render latency on modern NVIDIA, AMD and Intel GPUs.	Die Grafikkarte verwaltet ihren Videospeicher selbst statt der CPU. Weniger CPU-Last und Render-Latenz bei modernen NVIDIA-, AMD- und Intel-GPUs.
+S	Enable Game Mode	Spielmodus einschalten
+S	Tells Windows to prioritise the game you are playing and to hold back Windows Update installs and driver restarts while a game is running.	Windows bevorzugt dein laufendes Spiel und h\u00e4lt Windows-Update-Installationen und Treiber-Neustarts zur\u00fcck, solange ein Spiel l\u00e4uft.
+S	Disable Game DVR & Background Recording	Game DVR & Hintergrundaufnahme aus
+S	Turns off Xbox background capture, which constantly records gameplay and costs frames. Use NVIDIA ShadowPlay instead if you want clips.	Schaltet die Xbox-Hintergrundaufnahme aus, die st\u00e4ndig mitschneidet und FPS kostet. F\u00fcr Clips lieber NVIDIA ShadowPlay nutzen.
+S	Disable Fullscreen Optimizations	Vollbildoptimierungen aus
+S	Forces true exclusive fullscreen in DirectX 9/11 games for lower input latency. Alt-tab becomes slower - leave this off if you mostly play borderless.	Erzwingt echtes exklusives Vollbild in DirectX-9/11-Spielen f\u00fcr weniger Input-Lag. Alt-Tab wird langsamer - lass es aus, wenn du meist randlos spielst.
+S	Prioritize Games (MMCSS)	Spiele priorisieren (MMCSS)
+S	Raises the Multimedia Class Scheduler profile for games: high CPU scheduling category, high I/O priority and top GPU priority.	Erh\u00f6ht das Multimedia-Class-Scheduler-Profil f\u00fcr Spiele: hohe CPU-Kategorie, hohe E/A-Priorit\u00e4t und h\u00f6chste GPU-Priorit\u00e4t.
+S	Maximize System Responsiveness	Maximale Systemreaktion
+S	Reserves only 10% of CPU time for background multimedia tasks instead of 20%, giving the game more CPU time.	Reserviert nur 10 % statt 20 % CPU-Zeit f\u00fcr Multimedia im Hintergrund - das Spiel bekommt mehr CPU-Zeit.
+S	Foreground Priority Boost	Vordergrund-Priorit\u00e4t
+S	Uses short, variable CPU time slices with maximum boost for the foreground window (0x26), so the game gets the scheduler's attention first.	Nutzt kurze, variable CPU-Zeitscheiben mit maximalem Boost f\u00fcr das Vordergrundfenster (0x26), damit das Spiel zuerst drankommt.
+S	Global Timer Resolution	Globale Timer-Aufl\u00f6sung
+S	Restores system-wide high-resolution timer behaviour on Windows 11, so games that request 0.5-1 ms timers always get them. Lower frame-time jitter, slightly higher power use.	Stellt unter Windows 11 die systemweite hochaufl\u00f6sende Timer-Funktion wieder her, damit Spiele ihre 0,5-1-ms-Timer immer bekommen. Weniger Frametime-Schwankung, etwas mehr Stromverbrauch.
+S	Disable CPU Core Parking	CPU-Core-Parking aus
+S	Keeps all CPU cores (including E-cores on Intel hybrid CPUs) awake so game threads never wait for a parked core to wake up. Applies to the active power plan.	H\u00e4lt alle CPU-Kerne wach (auch E-Kerne bei Intel-Hybrid-CPUs), damit Spiel-Threads nie auf einen geparkten Kern warten. Gilt f\u00fcr den aktiven Energiesparplan.
+S	Disable USB Selective Suspend	USB-Energiesparmodus aus
+S	Prevents Windows from putting your mouse, keyboard and headset USB ports to sleep, avoiding input drop-outs and wake-up lag.	Verhindert, dass Windows die USB-Anschl\u00fcsse von Maus, Tastatur und Headset schlafen legt - keine Eingabe-Aussetzer und kein Aufwach-Lag.
+S	Disable PCIe Power Saving	PCIe-Energiesparen aus
+S	Turns off PCIe Link State Power Management so the graphics card and NVMe SSD links never drop into low-power states mid-game.	Schaltet die PCIe-Verbindungsstatus-Energieverwaltung aus, damit Grafikkarte und NVMe-SSD mitten im Spiel nie in den Stromsparmodus fallen.
+S	Makes sure your NVIDIA graphics card uses MSI interrupts instead of legacy line-based IRQs for lower interrupt latency. Recent NVIDIA drivers often enable this already.	Sorgt daf\u00fcr, dass deine NVIDIA-Grafikkarte MSI-Interrupts statt alter IRQs nutzt - niedrigere Interrupt-Latenz. Neuere NVIDIA-Treiber machen das oft schon.
+S	Disable Dynamic Tick	Dynamic Tick aus
+S	Keeps the kernel timer ticking at a constant rate instead of pausing when idle. Can reduce micro-stutter and DPC latency spikes. If BitLocker is on, suspend it before restarting.	L\u00e4sst den Kernel-Timer gleichm\u00e4\u00dfig ticken statt im Leerlauf zu pausieren. Kann Mikroruckler und DPC-Latenzspitzen verringern. Wenn BitLocker an ist, vor dem Neustart anhalten.
+S	Disable Memory Integrity (VBS)	Speicherintegrit\u00e4t aus (VBS)
+S	Turns off Virtualization-Based Security / Core Isolation, which Microsoft itself says can cost gaming performance. This lowers protection against kernel-level malware - only do it if you accept that trade-off.	Schaltet virtualisierungsbasierte Sicherheit / Kernisolierung aus, die laut Microsoft selbst Spieleleistung kosten kann. Das senkt den Schutz vor Kernel-Malware - nur machen, wenn du das in Kauf nimmst.
+S	Disable Mouse Acceleration	Mausbeschleunigung aus
+S	Turns off "Enhance pointer precision" for 1:1 raw mouse movement - essential for consistent aim. Applied instantly.	Schaltet "Zeigerbeschleunigung verbessern" aus f\u00fcr 1:1-Mausbewegung - wichtig f\u00fcr konstantes Zielen. Wirkt sofort.
+S	Disable Network Throttling	Netzwerkdrosselung aus
+S	Removes the packet-rate cap Windows applies to non-multimedia traffic while audio or video plays. Helps against ping spikes with Discord or music running.	Entfernt die Paketraten-Grenze, die Windows bei laufendem Audio oder Video setzt. Hilft gegen Ping-Spitzen mit Discord oder Musik im Hintergrund.
+S	Sends small TCP packets immediately instead of batching them. Helps TCP-based games (MMOs, some older titles); UDP shooters like Valorant or CS2 are unaffected.	Schickt kleine TCP-Pakete sofort statt sie zu sammeln. Hilft TCP-Spielen (MMOs, manche \u00e4ltere Titel); UDP-Shooter wie Valorant oder CS2 sind nicht betroffen.
+S	Disable Network Adapter Power Saving	Netzwerkadapter-Energiesparen aus
+S	Stops Windows from switching off your Ethernet/Wi-Fi adapter to save power, a common cause of lag spikes and short disconnects.	Verhindert, dass Windows deinen LAN-/WLAN-Adapter zum Stromsparen abschaltet - h\u00e4ufige Ursache f\u00fcr Lag-Spitzen und kurze Verbindungsabbr\u00fcche.
+S	Disable Interrupt Moderation	Interrupt-Moderation aus
+S	Makes the network card signal every packet immediately instead of batching them. Shaves network latency at the cost of a little CPU - modern CPUs have plenty. The connection blinks while applying.	Die Netzwerkkarte meldet jedes Paket sofort statt gesammelt. Etwas weniger Netzwerk-Latenz f\u00fcr etwas CPU - moderne CPUs haben genug. Die Verbindung blinkt beim Anwenden kurz.
+S	Use Cloudflare DNS (1.1.1.1)	Cloudflare-DNS nutzen (1.1.1.1)
+S	Switches your connected adapters to Cloudflare's fast public DNS for quicker lookups when connecting to game servers. Reverting restores your previous (usually router) DNS.	Stellt deine Adapter auf den schnellen \u00f6ffentlichen DNS von Cloudflare um, f\u00fcr schnellere Aufl\u00f6sung beim Verbinden mit Spielservern. Zur\u00fccksetzen stellt deinen vorherigen DNS (meist Router) wieder her.
+S	Disable Update Peer Sharing	Update-Verteilung an andere PCs aus
+S	Stops Windows Update from uploading updates to other PCs over the internet (Delivery Optimization), which can eat upload bandwidth mid-match.	Verhindert, dass Windows Update \u00fcber das Internet Updates an andere PCs hochl\u00e4dt (\u00dcbermittlungsoptimierung) - das kann mitten im Match Upload fressen.
+S	Flush DNS Cache	DNS-Cache leeren
+S	Clears cached DNS entries. Fixes "can't connect to server" problems after game server or network changes.	L\u00f6scht gespeicherte DNS-Eintr\u00e4ge. Behebt "Keine Verbindung zum Server"-Probleme nach Server- oder Netzwerkwechseln.
+S	Disable Memory Compression	Speicherkomprimierung aus
+S	With 16 GB or more you rarely run out of RAM, so compressing memory just burns CPU cycles. Needs the SysMain service running while you toggle it.	Mit 16 GB oder mehr geht der RAM selten aus, Komprimieren kostet dann nur CPU. Der SysMain-Dienst muss beim Umschalten laufen.
+S	Disable SysMain (Superfetch)	SysMain aus (Superfetch)
+S	SysMain preloads apps into RAM - pointless on a fast NVMe SSD and a known source of background disk and CPU spikes.	SysMain l\u00e4dt Apps vorab in den RAM - sinnlos auf einer schnellen NVMe-SSD und eine bekannte Quelle f\u00fcr Festplatten- und CPU-Spitzen.
+S	Keep Windows Kernel in RAM	Windows-Kernel im RAM halten
+S	Stops Windows from paging kernel and driver code out to disk. With 16 GB or more this costs nothing and avoids rare hitches.	Verhindert, dass Windows Kernel- und Treibercode auf die Festplatte auslagert. Mit 16 GB oder mehr kostet das nichts und vermeidet seltene H\u00e4nger.
+S	Disable Hibernation	Ruhezustand aus
+S	Deletes hiberfil.sys and frees several GB (about 40% of your RAM size) on your system drive. Also turns off Fast Startup.	L\u00f6scht hiberfil.sys und gibt mehrere GB (etwa 40 % deiner RAM-Gr\u00f6\u00dfe) auf dem Systemlaufwerk frei. Schaltet auch den Schnellstart aus.
+S	Disable Fast Startup	Schnellstart aus
+S	Makes Shut down a real shutdown so Windows and the NVIDIA driver fully reload. Fixes many "PC gets slower until I restart" issues.	Herunterfahren f\u00e4hrt wirklich herunter, damit Windows und der NVIDIA-Treiber komplett neu laden. Behebt viele "PC wird langsamer, bis ich neu starte"-Probleme.
+S	Disable NTFS Last-Access Timestamps	NTFS-Zugriffszeitstempel aus
+S	Stops Windows writing a timestamp every time a file is read. Fewer SSD writes while games stream thousands of asset files.	Windows schreibt nicht mehr bei jedem Lesen einer Datei einen Zeitstempel. Weniger SSD-Schreibzugriffe, wenn Spiele tausende Dateien laden.
+S	Disable 8.3 Short File Names	8.3-Kurznamen aus
+S	Stops NTFS creating legacy DOS-style short names for every new file, speeding up file creation in big game folders.	NTFS erstellt keine alten DOS-Kurznamen mehr f\u00fcr jede neue Datei - schnelleres Anlegen in gro\u00dfen Spielordnern.
+S	Ensure SSD TRIM Is Enabled	SSD-TRIM sicher einschalten
+S	Makes sure Windows tells your SSD which blocks are free, keeping write speed and lifespan at their best.	Sorgt daf\u00fcr, dass Windows deiner SSD freie Bl\u00f6cke meldet - beste Schreibgeschwindigkeit und Lebensdauer.
+S	Disable Search Indexing	Suchindizierung aus
+S	Stops the Windows Search indexer crawling your drive in the background. Searching for files in Start becomes slower; finding apps still works.	Der Windows-Suchindex durchsucht dein Laufwerk nicht mehr im Hintergrund. Dateisuche im Start wird langsamer; Apps finden klappt weiter.
+S	Optimize SSD Now (ReTrim)	SSD jetzt optimieren (ReTrim)
+S	Sends a full TRIM pass to all your SSD volumes so the controller can reclaim free blocks right away.	Schickt einen kompletten TRIM-Durchlauf an alle SSD-Laufwerke, damit freie Bl\u00f6cke sofort freigegeben werden.
+S	Clean Temporary Files	Tempor\u00e4re Dateien l\u00f6schen
+S	Deletes leftover files in your user and Windows temp folders. Files that are in use are skipped automatically.	L\u00f6scht Reste in deinen Benutzer- und Windows-Temp-Ordnern. Dateien in Benutzung werden automatisch \u00fcbersprungen.
+S	Remove Startup App Delay	Autostart-Verz\u00f6gerung entfernen
+S	Windows waits several seconds after sign-in before launching startup apps. This removes the artificial delay.	Windows wartet nach der Anmeldung einige Sekunden, bevor Autostart-Apps starten. Das entfernt diese k\u00fcnstliche Pause.
+S	Instant Menus	Sofortige Men\u00fcs
+S	Removes the 400 ms delay before menus and sub-menus open.	Entfernt die 400-ms-Verz\u00f6gerung, bevor Men\u00fcs und Untermen\u00fcs aufgehen.
+S	Faster Shutdown	Schnelleres Herunterfahren
+S	Gives hung apps and services 2 seconds instead of 5+ to close at shutdown. Save your work before shutting down, as always.	H\u00e4ngende Apps und Dienste bekommen beim Herunterfahren 2 statt 5+ Sekunden. Speichere wie immer vorher deine Arbeit.
+S	Disable Windows Error Reporting	Windows-Fehlerberichte aus
+S	Stops Windows collecting and uploading crash dumps after every app or game crash, which can freeze the PC for several seconds.	Windows sammelt und l\u00e4dt nach Abst\u00fcrzen keine Crash-Dumps mehr hoch - das kann den PC einige Sekunden einfrieren.
+S	Disable Remote Assistance	Remoteunterst\u00fctzung aus
+S	Turns off unsolicited Remote Assistance connections. One less listening service and attack surface.	Schaltet unaufgeforderte Remoteunterst\u00fctzung aus. Ein lauschender Dienst und eine Angriffsfl\u00e4che weniger.
+S	Disable Transparency Effects	Transparenzeffekte aus
+S	Turns off the acrylic blur in the taskbar and Start menu, removing a little constant work from the desktop compositor.	Schaltet die Unsch\u00e4rfe in Taskleiste und Startmen\u00fc aus und nimmt dem Desktop etwas Dauerarbeit ab.
+S	Disable Window Animations	Fensteranimationen aus
+S	Removes minimize/maximize and taskbar animations so alt-tabbing in and out of games feels instant. Takes effect after sign-out.	Entfernt Minimieren-/Maximieren- und Taskleisten-Animationen, damit Alt-Tab in und aus Spielen sofort wirkt. Wirkt nach Abmelden.
+S	Disable Background Apps	Hintergrund-Apps aus
+S	Stops Microsoft Store apps from running in the background when you are not using them.	Microsoft-Store-Apps laufen nicht mehr im Hintergrund, wenn du sie nicht nutzt.
+S	Disable Copilot	Copilot aus
+S	Hides Copilot from the taskbar and turns off the Windows Copilot integration.	Blendet Copilot in der Taskleiste aus und schaltet die Copilot-Integration ab.
+S	Disable Recall & AI Snapshots	Recall & KI-Snapshots aus
+S	Prevents Windows Recall from taking and analysing screenshots of everything you do.	Verhindert, dass Windows Recall Screenshots von allem macht, was du tust, und sie auswertet.
+S	Disable Widgets	Widgets aus
+S	Removes the Widgets board and its background news feed process (Widgets.exe / WebView2).	Entfernt das Widgets-Board und seinen News-Prozess im Hintergrund (Widgets.exe / WebView2).
+S	Disable Cortana	Cortana aus
+S	Turns off Cortana so it cannot run or use CPU and disk in the background.	Schaltet Cortana aus, damit sie nicht im Hintergrund CPU und Festplatte nutzt.
+S	Disable Web Results in Start Search	Webergebnisse in der Startsuche aus
+S	Start search only searches your PC - no Bing results, no network round-trip, faster results.	Die Startsuche durchsucht nur deinen PC - keine Bing-Ergebnisse, kein Netzwerk, schnellere Ergebnisse.
+S	Remove Start Menu Ads & Auto-Installed Apps	Startmen\u00fc-Werbung & Auto-Apps entfernen
+S	Stops Windows silently installing promoted apps and removes suggestions and recommendations from Start.	Windows installiert keine beworbenen Apps mehr heimlich und Vorschl\u00e4ge im Start verschwinden.
+S	Remove Windows Settings Ads	Werbung in den Einstellungen entfernen
+S	Removes promotional suggestions and offers from the Settings app.	Entfernt Werbevorschl\u00e4ge und Angebote aus der Einstellungen-App.
+S	Disable Lock Screen Tips & Ads	Sperrbildschirm-Tipps & Werbung aus
+S	Removes fun facts, tips and promotions from the lock screen.	Entfernt Fun Facts, Tipps und Werbung vom Sperrbildschirm.
+S	Disable Tips & "Finish Setup" Nags	Tipps & "Einrichtung abschlie\u00dfen"-Nerven aus
+S	Stops the "Let's finish setting up your device" screens and tip notifications.	Stoppt die "Lass uns die Einrichtung abschlie\u00dfen"-Bildschirme und Tipp-Benachrichtigungen.
+S	Stop Edge Running in Background	Edge im Hintergrund stoppen
+S	Disables Edge Startup Boost and background mode so Edge does not sit in RAM when closed. Edge will say it is "managed by your organization" - that is normal for policies.	Schaltet Edge-Startboost und Hintergrundmodus aus, damit Edge geschlossen nicht im RAM bleibt. Edge zeigt dann "Von deiner Organisation verwaltet" - das ist bei Richtlinien normal.
+S	Stop OneDrive Auto-Start	OneDrive-Autostart stoppen
+S	Prevents OneDrive from launching and syncing at boot. You can still open it manually any time.	OneDrive startet und synchronisiert nicht mehr beim Hochfahren. Du kannst es jederzeit manuell \u00f6ffnen.
+S	Disable Xbox Services	Xbox-Dienste aus
+S	Turns off Xbox Live sign-in, cloud-save and networking services. Leave this OFF if you use Game Pass, the Xbox app or Xbox cloud saves.	Schaltet Xbox-Live-Anmeldung, Cloud-Speicher und Netzwerkdienste aus. Lass das AUS, wenn du Game Pass, die Xbox-App oder Xbox-Cloud-Spielst\u00e4nde nutzt.
+S	Disable Xbox Game Bar Overlay	Xbox-Game-Bar-Overlay aus
+S	Stops the Win+G overlay hooking into games. Game Mode keeps working.	Das Win+G-Overlay klinkt sich nicht mehr in Spiele ein. Der Spielmodus funktioniert weiter.
+S	App Cleaner: Remove Unneeded Apps	App-Cleaner: Unn\u00f6tige Apps entfernen
+S	Opens the App Cleaner, where you pick exactly which preinstalled apps (News, Solitaire, Clipchamp, Candy Crush, TikTok ...) get removed.	\u00d6ffnet den App-Cleaner, wo du genau ausw\u00e4hlst, welche vorinstallierten Apps (News, Solitaire, Clipchamp, Candy Crush, TikTok ...) entfernt werden.
+S	Minimize Windows Telemetry	Windows-Telemetrie minimieren
+S	Sets diagnostic data to the minimum your edition allows and stops the Connected User Experiences & Telemetry service that uploads usage data in the background.	Setzt Diagnosedaten auf das Minimum deiner Edition und stoppt den Telemetrie-Dienst, der im Hintergrund Nutzungsdaten hochl\u00e4dt.
+S	Disable Telemetry Scheduled Tasks	Telemetrie-Aufgaben aus
+S	Disables the Compatibility Appraiser, CEIP and feedback tasks that wake up in the background and scan your PC.	Schaltet Kompatibilit\u00e4ts-, CEIP- und Feedback-Aufgaben aus, die im Hintergrund aufwachen und deinen PC scannen.
+S	Disable Advertising ID	Werbe-ID aus
+S	Stops apps using your advertising ID to show personalised ads across apps.	Apps nutzen deine Werbe-ID nicht mehr f\u00fcr personalisierte Werbung.
+S	Disable Activity History	Aktivit\u00e4tsverlauf aus
+S	Stops Windows recording and uploading a timeline of the apps and files you use.	Windows zeichnet keinen Verlauf deiner Apps und Dateien mehr auf und l\u00e4dt ihn nicht hoch.
+S	Disable Tailored Experiences	Ma\u00dfgeschneiderte Erfahrungen aus
+S	Stops Microsoft using your diagnostic data to show personalised tips, ads and recommendations.	Microsoft nutzt deine Diagnosedaten nicht mehr f\u00fcr personalisierte Tipps, Werbung und Empfehlungen.
+S	Disable Feedback Prompts	Feedback-Abfragen aus
+S	No more "How likely are you to recommend Windows?" pop-ups.	Keine "Wie wahrscheinlich empfehlen Sie Windows?"-Pop-ups mehr.
+S	Disable NVIDIA Telemetry	NVIDIA-Telemetrie aus
+S	Opts out of NVIDIA driver telemetry and stops the NVIDIA telemetry container service if your driver has one.	Meldet dich von der NVIDIA-Treiber-Telemetrie ab und stoppt den Telemetrie-Dienst, falls dein Treiber einen hat.
+S	Disable Firefox Telemetry	Firefox-Telemetrie aus
+S	Stops Firefox sending usage and performance data to Mozilla.	Firefox sendet keine Nutzungs- und Leistungsdaten mehr an Mozilla.
+S	Disable Location Access	Standortzugriff aus
+S	Blocks all apps from using your location. Automatic time zone and local weather will stop working.	Sperrt allen Apps den Standort. Automatische Zeitzone und lokales Wetter funktionieren dann nicht mehr.
+S	Disable Sticky Keys Pop-up	Einrastfunktion-Pop-up aus
+S	No more Sticky Keys pop-up when you tap Shift five times mid-game. Also disables the Filter Keys and Toggle Keys shortcuts.	Kein Einrastfunktion-Pop-up mehr, wenn du im Spiel f\u00fcnfmal Shift dr\u00fcckst. Schaltet auch die Tastenk\u00fcrzel f\u00fcr Anschlagverz\u00f6gerung und Statustasten aus.
+S	Fastest Keyboard Repeat	Schnellste Tastenwiederholung
+S	Shortest delay before a held key starts repeating, at the fastest repeat rate. Takes effect after sign-out.	K\u00fcrzeste Verz\u00f6gerung, bevor eine gehaltene Taste wiederholt, mit schnellster Rate. Wirkt nach Abmelden.
+S	Show Detailed Boot Messages	Detaillierte Startmeldungen zeigen
+S	Shows what Windows is doing during startup and shutdown. Does not speed things up, but makes hangs easy to diagnose.	Zeigt, was Windows beim Starten und Herunterfahren macht. Macht nichts schneller, aber H\u00e4nger leicht erkennbar.
+S	Show File Extensions	Dateiendungen anzeigen
+S	Always show .exe, .zip, .cfg and other extensions - handy when editing game configs and safer against fake files.	Zeigt immer .exe, .zip, .cfg und andere Endungen - praktisch f\u00fcr Spiel-Configs und sicherer gegen gef\u00e4lschte Dateien.
+S	Classic Right-Click Menu	Klassisches Rechtsklick-Men\u00fc
+S	Brings back the full Windows 10 right-click menu without the extra "Show more options" click. Explorer restarts automatically.	Holt das volle Windows-10-Rechtsklickmen\u00fc zur\u00fcck, ohne den Extra-Klick auf "Weitere Optionen anzeigen". Der Explorer startet automatisch neu.
+S	Open Explorer to This PC	Explorer \u00f6ffnet "Dieser PC"
+S	File Explorer opens straight to your drives instead of Home / Quick access.	Der Explorer \u00f6ffnet direkt deine Laufwerke statt Start / Schnellzugriff.
+S	Hide Recent Files in Quick Access	Zuletzt verwendete Dateien ausblenden
+S	Stops Explorer listing recently opened files and frequent folders.	Der Explorer listet keine zuletzt ge\u00f6ffneten Dateien und h\u00e4ufigen Ordner mehr.
+S	Group Windows Services (fewer svchost)	Windows-Dienste gruppieren (weniger svchost)
+S	With more than 3.5 GB RAM Windows starts every service in its own svchost.exe. Grouping them again removes roughly 30-80 processes after a restart. Trade-off: if one service crashes, its group restarts with it.	Mit mehr als 3,5 GB RAM startet Windows jeden Dienst in einer eigenen svchost.exe. Gruppieren spart nach einem Neustart etwa 30-80 Prozesse. Nachteil: St\u00fcrzt ein Dienst ab, startet seine Gruppe mit neu.
+S	Disable Unneeded Services	Unn\u00f6tige Dienste aus
+S	Turns off services almost no gaming PC needs: Fax, Remote Registry, Offline Maps, Retail Demo, Windows Insider, Media Player network sharing, Link Tracking, Parental Controls, NFC Payments and the Program Compatibility Assistant.	Schaltet Dienste aus, die fast kein Gaming-PC braucht: Fax, Remoteregistrierung, Offlinekarten, Retail-Demo, Windows Insider, Media-Player-Netzwerkfreigabe, Verkn\u00fcpfungsverfolgung, Jugendschutz, NFC-Zahlungen und den Programmkompatibilit\u00e4ts-Assistenten.
+S	Disable Print Spooler	Druckwarteschlange aus
+S	Stops the printing service. Only do this if you do not use a printer - turn it back on any time you need to print.	Stoppt den Druckdienst. Nur machen, wenn du keinen Drucker nutzt - zum Drucken jederzeit wieder einschalten.
+S	Disable Network Adapter Energy Saving	Netzwerkadapter-Energiesparfunktionen aus
+S	Turns off Energy-Efficient Ethernet, Green Ethernet and similar adapter power features that put the link to sleep between packets and cause small ping spikes. The connection drops for a few seconds while applying.	Schaltet Energy-Efficient Ethernet, Green Ethernet und \u00e4hnliche Funktionen aus, die die Verbindung zwischen Paketen schlafen legen und kleine Ping-Spitzen verursachen. Die Verbindung ist beim Anwenden ein paar Sekunden weg.
+S	Disable Large Send Offload	Large Send Offload aus
+S	Stops the network card from collecting outgoing data into big chunks before sending. Small game packets leave right away. The connection drops for a few seconds while applying.	Die Netzwerkkarte sammelt ausgehende Daten nicht mehr in gro\u00dfe Bl\u00f6cke. Kleine Spielpakete gehen sofort raus. Die Verbindung ist beim Anwenden ein paar Sekunden weg.
+S	Prioritize Game Traffic (QoS)	Spiel-Datenverkehr priorisieren (QoS)
+S	Marks the network packets of all known games (and your own added games) as top priority (DSCP 46). Wi-Fi and routers that support QoS / WMM send them first when the connection is busy.	Markiert die Netzwerkpakete aller bekannten Spiele (und deiner eigenen) als h\u00f6chste Priorit\u00e4t (DSCP 46). WLAN und Router mit QoS / WMM schicken sie bei voller Leitung zuerst.
+S	Limit Background Update Downloads	Update-Downloads im Hintergrund begrenzen
+S	Windows Update and Store downloads in the background may use at most 10% of your bandwidth, so they cannot flood your connection and spike your ping mid-match.	Windows-Update- und Store-Downloads im Hintergrund d\u00fcrfen h\u00f6chstens 10 % deiner Bandbreite nutzen und k\u00f6nnen so mitten im Match nicht deinen Ping hochtreiben.
+S	Disable Receive Segment Coalescing	Receive Segment Coalescing aus
+S	Stops the network card from holding incoming packets back to merge them into bigger chunks. Game packets reach the game immediately instead of waiting to be bundled.	Die Netzwerkkarte h\u00e4lt eingehende Pakete nicht mehr zum B\u00fcndeln zur\u00fcck. Spielpakete kommen sofort im Spiel an.
+S	Enable Receive Side Scaling	Receive Side Scaling an
+S	Lets several CPU cores process incoming network traffic instead of one, so a busy core never delays your game packets.	Mehrere CPU-Kerne verarbeiten eingehenden Netzwerkverkehr statt nur einer, damit ein ausgelasteter Kern deine Spielpakete nie bremst.
+S	Maximum Network Buffers (no packet drops)	Maximale Netzwerkpuffer (kein Paketverlust)
+S	Sets the receive and transmit buffers of your network card to the maximum, so bursts of traffic (downloads, voice chat, game updates) never cause dropped packets. Uses a few MB of RAM. The connection drops for a few seconds while applying.	Setzt die Empfangs- und Sendepuffer deiner Netzwerkkarte auf das Maximum, damit Verkehrsspitzen (Downloads, Voice-Chat, Updates) nie Pakete verlieren. Braucht ein paar MB RAM. Die Verbindung ist beim Anwenden ein paar Sekunden weg.
+S	Wi-Fi: Lowest Roaming Aggressiveness	WLAN: Niedrigste Roaming-Aggressivit\u00e4t
+S	Stops your Wi-Fi card from constantly scanning for a "better" access point - those background scans cause the classic ping spike every 30-60 seconds. The connection drops for a few seconds while applying.	Deine WLAN-Karte sucht nicht mehr st\u00e4ndig nach einem "besseren" Zugangspunkt - diese Scans verursachen die typische Ping-Spitze alle 30-60 Sekunden. Die Verbindung ist beim Anwenden ein paar Sekunden weg.
+S	Disable Ethernet Flow Control	Ethernet-Flusskontrolle aus
+S	Stops the network card and router from sending "pause" frames that briefly halt traffic. Can remove tiny delays on a busy LAN; on rare setups it causes more packet loss - turn it back off if your ping gets worse.	Netzwerkkarte und Router senden keine "Pause"-Frames mehr, die den Verkehr kurz anhalten. Kann kleine Verz\u00f6gerungen im vollen LAN entfernen; selten gibt es mehr Paketverlust - dann wieder ausschalten.
+S	Optimizations for Windowed Games	Optimierungen f\u00fcr Spiele im Fenstermodus
+S	Windows 11 feature: DirectX 10/11 games in borderless or windowed mode use the modern flip presentation model - lower input lag, close to exclusive fullscreen.	Windows-11-Funktion: DirectX-10/11-Spiele im randlosen oder Fenstermodus nutzen das moderne Flip-Modell - weniger Input-Lag, fast wie exklusives Vollbild.
+S	Disable Power Saving on USB & Input Devices	Energiesparen bei USB- & Eingabeger\u00e4ten aus
+S	Turns off "Allow the computer to turn off this device to save power" for every USB controller, hub, mouse, keyboard and HID device - no more wake-up delay or dropped inputs.	Schaltet "Computer kann das Ger\u00e4t ausschalten, um Energie zu sparen" f\u00fcr jeden USB-Controller, Hub, Maus, Tastatur und jedes HID-Ger\u00e4t aus - keine Aufwach-Verz\u00f6gerung und keine verlorenen Eingaben.
+S	Use the Fast CPU Timer (no forced HPET)	Schnellen CPU-Timer nutzen (kein erzwungenes HPET)
+S	Some old tweak tools force Windows onto the slow HPET timer (useplatformclock), which adds latency and costs FPS. This removes that setting so Windows uses the fast built-in CPU timer. Shows as active when your PC is already correct.	Manche alten Tweak-Tools zwingen Windows auf den langsamen HPET-Timer (useplatformclock) - das kostet Latenz und FPS. Das entfernt die Einstellung, damit Windows den schnellen CPU-Timer nutzt. Zeigt aktiv, wenn dein PC schon richtig eingestellt ist.
+S	Mouse Pointer Speed 6/11 (1:1)	Mauszeiger-Tempo 6/11 (1:1)
+S	Sets the Windows pointer speed to the 6th notch, the only setting where one mouse count moves the cursor exactly one pixel. Games that do not use raw input then feel exactly like your mouse DPI. Your desktop cursor speed may change.	Setzt das Windows-Zeigertempo auf Stufe 6 - die einzige Stufe, bei der ein Maus-Count den Zeiger genau einen Pixel bewegt. Spiele ohne Raw Input f\u00fchlen sich dann genau wie deine Maus-DPI an. Dein Desktop-Zeigertempo kann sich \u00e4ndern.
+S	FPS & Latency	FPS & Latenz
+S	Network & Ping	Netzwerk & Ping
+S	Input	Eingabe
+S	Memory & Storage	Speicher & Laufwerke
+S	Privacy	Privatsph\u00e4re
+S	Quality of Life	Komfort
+S	Welcome to Silvan Boost	Willkommen bei Silvan Boost
+S	Your PC is scanned. A short tour shows you the few buttons that matter most.	Dein PC ist gescannt. Eine kurze Tour zeigt dir die paar Kn\u00f6pfe, auf die es ankommt.
+S	LANGUAGE	SPRACHE
+S	Applies instantly. No restart needed.	Wirkt sofort. Kein Neustart n\u00f6tig.
+S	Start the tour (1 min)	Tour starten (1 Min.)
+S	Skip	\u00dcberspringen
+S	You can open the tour again any time with the ? button.	Mit dem ?-Knopf kannst du die Tour jederzeit wieder \u00f6ffnen.
+S	Skip tour	Tour \u00fcberspringen
+S	Back	Zur\u00fcck
+S	Finish	Fertig
+S	Your PC score	Dein PC-Score
+S	This shows how optimized your PC is. The card below always names the one next step worth doing.	Hier siehst du, wie gut dein PC optimiert ist. Die Karte darunter nennt immer den n\u00e4chsten sinnvollen Schritt.
+S	The one button most people need. Pick Competitive - a restore point is made for you.	Der eine Knopf, den die meisten brauchen. W\u00e4hle Competitive - ein Wiederherstellungspunkt wird automatisch erstellt.
+S	Pick your game, then click Optimize.	W\u00e4hle dein Spiel und klicke dann auf Optimieren.
+S	Leave Silvan Boost open while you play (minimized is fine). Problems show up with a fix.	Lass Silvan Boost beim Spielen offen (minimiert reicht). Probleme erscheinen mit L\u00f6sung.
+S	Ping Booster, Input Lag and game-safe Macros live here.	Hier findest du Ping-Booster, Input-Lag und spielsichere Makros.
+S	Safety first	Sicherheit zuerst
+S	Everything can be undone. Backup & Restore has a Revert all button.	Alles l\u00e4sst sich r\u00fcckg\u00e4ngig machen. Unter Sicherung & Wiederherstellung gibt es "Alles zur\u00fccksetzen".
+S	You're all set	Alles bereit
+S	New here? Do these three things, in this order:	Neu hier? Mach diese drei Dinge, in dieser Reihenfolge:
+S	Quick Boost on Competitive	Quick Boost auf Competitive
+S	Turns on the tweaks most people need.	Schaltet die Tweaks ein, die die meisten brauchen.
+S	Game Preset for your game	Spiel-Preset f\u00fcr dein Spiel
+S	Restart your PC	PC neu starten
+S	Some changes only apply after a restart.	Manche \u00c4nderungen wirken erst nach einem Neustart.
+S	Open the tour again any time with the ? button	Die Tour jederzeit mit dem ?-Knopf wieder \u00f6ffnen
+S	Show the tour again	Tour noch mal zeigen
+S	Language	Sprache
+S	Changes all text right away. No restart needed.	\u00c4ndert sofort alle Texte. Kein Neustart n\u00f6tig.
+S	Beginner tour	Einsteiger-Tour
+S	Six short steps, about one minute. Also on the ? button up top.	Sechs kurze Schritte, etwa eine Minute. Auch \u00fcber den ?-Knopf oben.
+S	Help: show the tour	Hilfe: Tour anzeigen
+S	Change language	Sprache \u00e4ndern
+P	^Not available: (.*)$	Nicht verf\u00fcgbar: $1
+P	^Not recommended: (.*)$	Nicht empfohlen: $1
+P	^You have the latest version \\((.*)\\) - checked (.*)\\.$	Du hast die neueste Version ($1) - gepr\u00fcft $2.
+P	^Could not check for updates \\((.*)\\)\\.$	Konnte nicht nach Updates suchen ($1).
+P	^Version (\\S+) is available\\.$	Version $1 ist verf\u00fcgbar.
+P	^Version (\\S+)  -  (\\d+) optimizations and tools$	Version $1  -  $2 Optimierungen und Werkzeuge
+P	^v(\\S+)  -  FPS Optimizer$	v$1  -  FPS-Optimierer
+P	^Close selected \\((\\d+)\\)$	Ausgew\u00e4hlte schlie\u00dfen ($1)
+P	^Remove selected \\((\\d+)\\)$	Ausgew\u00e4hlte entfernen ($1)
+P	^Closed (\\d+) process\\(es\\)$	$1 Prozess(e) geschlossen
+P	^Active now: (.*)  -  game safe mode$	Gerade aktiv: $1  -  spielsicherer Modus
+P	^Active now: (.*)$	Gerade aktiv: $1
+P	^Profile: (.*)$	Profil: $1
+P	^Keyboard hotkey  -  profile (.*)$	Tastatur-Hotkey  -  Profil $1
+P	^Mouse button  -  profile (.*)$	Maustaste  -  Profil $1
+P	^(\\d+) actions$	$1 Aktionen
+P	^(\\d+) steps  -  about (.*) s per run$	$1 Schritte  -  etwa $2 s pro Durchlauf
+P	^Recording - (\\d+) steps so far\\. Press keys or click in any window\\. Click Stop when done\\.$	Aufnahme - bisher $1 Schritte. Dr\u00fccke Tasten oder klicke in einem beliebigen Fenster. Klicke auf Stopp, wenn du fertig bist.
+P	^Wireless receiver  -  click the name to rename$	Funk-Empf\u00e4nger  -  Name anklicken zum Umbenennen
+P	^USB  -  click the name to rename$	USB  -  Name anklicken zum Umbenennen
+P	^Bluetooth  -  click the name to rename$	Bluetooth  -  Name anklicken zum Umbenennen
+P	^Step (\\d+) of (\\d+)$	Schritt $1 von $2
+P	^FPS & Latency(\\s+\\d+)$	FPS & Latenz$1
+P	^Network & Ping(\\s+\\d+)$	Netzwerk & Ping$1
+P	^Input(\\s+\\d+)$	Eingabe$1
+P	^Memory & Storage(\\s+\\d+)$	Speicher & Laufwerke$1
+P	^Processes(\\s+\\d+)$	Prozesse$1
+P	^Registry(\\s+\\d+)$	Registry$1
+P	^Debloat(\\s+\\d+)$	Debloat$1
+P	^Privacy(\\s+\\d+)$	Privatsph\u00e4re$1
+P	^Quality of Life(\\s+\\d+)$	Komfort$1
+P	^Key: (.*)$	Taste: $1
+P	^Open (.+)$	$1 \u00f6ffnen
+P	^input to display (\\S+) ms$	Eingabe bis Bild $1 ms
+P	^busiest core (\\S+)%$	st\u00e4rkster Kern $1%
+P	^VRAM of (\\S+) GB  \\|  RAM (\\S+)%$	VRAM von $1 GB  |  RAM $2%
+P	^loss (\\S+)%  \\|  max (\\S+) ms$	Verlust $1%  |  max $2 ms
+P	^to 1\\.1\\.1\\.1  \\|  best (\\S+) ms$	zu 1.1.1.1  |  bester $1 ms
+P	^jitter (\\S+) ms$	Jitter $1 ms
+P	^Idle ping: (\\S+) ms$	Ping im Leerlauf: $1 ms
+P	^Ping under load: (\\S+) ms  \\(\\+(\\S+) ms\\)$	Ping unter Last: $1 ms  (+$2 ms)
+P	^Download during test: (\\S+) Mbit/s$	Download beim Test: $1 Mbit/s
+'@
+
+# ------------------------------------------------------------------ language + beginner tour
+function L([string]$s) { [SBLang]::Tr($s) }
+
+function Import-LangData {
+    foreach ($line in ($LangData -split "`n")) {
+        $line = $line.TrimEnd("`r")
+        if (-not $line) { continue }
+        $p = $line.Split("`t")
+        try {
+            if ($p[0] -eq 'P' -and $p.Count -ge 3) { [SBLang]::AddPattern([regex]::Unescape($p[1]), [regex]::Unescape($p[2])) }
+            elseif ($p[0] -eq 'S' -and $p.Count -ge 3) { [SBLang]::Add([regex]::Unescape($p[1]), [regex]::Unescape($p[2])) }
+        } catch { }
+    }
+}
+
+function Get-DefaultLang {
+    try { if ((Get-UICulture).TwoLetterISOLanguageName -eq 'de') { return 'de' } } catch { }
+    'en'
+}
+
+$script:LangSync = $false
+function Set-AppLang([string]$lang, [switch]$NoSave) {
+    if ($lang -ne 'de') { $lang = 'en' }
+    [SBLang]::Lang = $lang
+    if (-not $NoSave) { $State.misc['Lang'] = $lang; Save-State }
+    $script:LangSync = $true
+    try {
+        $LangCode.Text = $lang.ToUpper()
+        $LangDe.IsChecked = ($lang -eq 'de'); $LangEn.IsChecked = ($lang -eq 'en')
+        $TourLangDe.IsChecked = ($lang -eq 'de'); $TourLangEn.IsChecked = ($lang -eq 'en')
+    } finally { $script:LangSync = $false }
+    [void][SBLang]::Apply($Window)
+    if ($TourBubble.Visibility -eq 'Visible') { Show-TourStep $TourIdx -NoMove }
+}
+
+function Show-LangMenu {
+    $menu = New-Object System.Windows.Controls.ContextMenu
+    $menu.PlacementTarget = $BtnLang
+    $menu.Placement = [System.Windows.Controls.Primitives.PlacementMode]::Bottom
+    foreach ($l in @(@('de', 'Deutsch'), @('en', 'English'))) {
+        $mi = New-Object System.Windows.Controls.MenuItem
+        $mi.Header = "$($l[0].ToUpper())   $($l[1])"
+        $mi.IsCheckable = $true
+        $mi.IsChecked = ([SBLang]::Lang -eq $l[0])
+        $mi.Tag = $l[0]
+        $mi.Add_Click({ param($s, $e) try { Set-AppLang ([string]$s.Tag); Set-Status (L 'Applies instantly. No restart needed.') } catch { Write-Log "Language error: $_" } })
+        [void]$menu.Items.Add($mi)
+    }
+    $menu.IsOpen = $true
+}
+
+# ---- tour
+$script:TourIdx = 0
+$script:TourPrevNav = 'NavHome'
+$script:TourHoleGeo = $null
+$script:TourSteps = @(
+    @{ Title = 'Your PC score'; Text = 'This shows how optimized your PC is. The card below always names the one next step worth doing.'; Target = 'HomeHero'; Place = 'below'; Nav = $null },
+    @{ Title = 'Quick Boost'; Text = 'The one button most people need. Pick Competitive - a restore point is made for you.'; Target = 'NavQuick'; Place = 'right'; Nav = 'NavQuick'; Reco = $true },
+    @{ Title = 'Game Presets'; Text = 'Pick your game, then click Optimize.'; Target = 'NavGames'; Place = 'right'; Nav = 'NavGames'; Reco = $true },
+    @{ Title = 'Live Monitor'; Text = 'Leave Silvan Boost open while you play (minimized is fine). Problems show up with a fix.'; Target = 'NavLive'; Place = 'right'; Nav = 'NavLive' },
+    @{ Title = 'Network & Input'; Text = 'Ping Booster, Input Lag and game-safe Macros live here.'; Target = 'NetGroup'; Place = 'right'; Nav = 'NavPing' },
+    @{ Title = 'Safety first'; Text = 'Everything can be undone. Backup & Restore has a Revert all button.'; Target = 'NavBackup'; Place = 'right'; Nav = 'NavBackup' }
+)
+
+function Start-Tour {
+    $script:TourPrevNav = $ActiveNav
+    $TourLayer.Visibility = 'Visible'
+    $TourDone.Visibility = 'Collapsed'
+    $TourBubble.Visibility = 'Collapsed'; $TourRing.Visibility = 'Collapsed'; $TourPulse.Visibility = 'Collapsed'
+    $TourDim.Visibility = 'Collapsed'
+    $TourWelcome.Visibility = 'Visible'
+    $script:LangSync = $true
+    $TourLangDe.IsChecked = ([SBLang]::Lang -eq 'de'); $TourLangEn.IsChecked = ([SBLang]::Lang -eq 'en')
+    $script:LangSync = $false
+    $TourWelcome.BeginAnimation([System.Windows.UIElement]::OpacityProperty, (New-Anim 1 220 0 0))
+    Invoke-AnimateIn $TourWelcomeCard 14 320
+    [void][SBLang]::Apply($TourLayer)
+}
+
+function Close-Tour([switch]$Finished) {
+    $State.misc['TourDone'] = $true; Save-State
+    $TourLayer.Visibility = 'Collapsed'
+    $TourPulse.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $null)
+    Select-NavFor $TourPrevNav
+    $msg = $(if ($Finished) { 'Open the tour again any time with the ? button' } else { 'You can open the tour again any time with the ? button.' })
+    Set-Status (L $msg)
+    $p = New-Anim 1 500 0 0.3; $p.AutoReverse = $true; $p.RepeatBehavior = New-Object System.Windows.Media.Animation.RepeatBehavior(3)
+    $BtnHelp.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $p)
+}
+
+function Begin-TourSteps {
+    $TourWelcome.Visibility = 'Collapsed'
+    $NavHome.IsChecked = $true
+    $script:TourPrevNav = 'NavHome'
+    $TourDim.Visibility = 'Visible'
+    $full = New-Object System.Windows.Media.RectangleGeometry([System.Windows.Rect]::new(0, 0, 6000, 4000))
+    $script:TourHoleGeo = New-Object System.Windows.Media.RectangleGeometry([System.Windows.Rect]::new(0, 0, 0, 0), 11, 11)
+    $TourDim.Data = New-Object System.Windows.Media.CombinedGeometry([System.Windows.Media.GeometryCombineMode]::Exclude, $full, $TourHoleGeo)
+    $TourDim.BeginAnimation([System.Windows.UIElement]::OpacityProperty, (New-Anim 1 220 0 0))
+    $pulse = New-Anim 0 1600 0 0.8; $pulse.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+    $sc = New-Object System.Windows.Media.ScaleTransform 1, 1
+    $TourPulse.RenderTransform = $sc
+    $TourPulse.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $pulse)
+    $sx = New-Anim 1.06 1600 0 1; $sx.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+    $sy = New-Anim 1.25 1600 0 1; $sy.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+    $sc.BeginAnimation([System.Windows.Media.ScaleTransform]::ScaleXProperty, $sx)
+    $sc.BeginAnimation([System.Windows.Media.ScaleTransform]::ScaleYProperty, $sy)
+    $script:TourIdx = -1
+    Show-TourStep 0
+}
+
+function Get-TourRect([string]$target) {
+    $els = @()
+    switch ($target) {
+        'NetGroup' { $els = @($CatNet, $SubNet) }
+        default { $els = @((Get-Variable -Name $target -Scope Script -ValueOnly)) }
+    }
+    $r = [System.Windows.Rect]::Empty
+    foreach ($el in $els) {
+        if (-not $el -or $el.ActualWidth -le 0) { continue }
+        $b = $el.TransformToAncestor($TourLayer).TransformBounds([System.Windows.Rect]::new(0, 0, $el.ActualWidth, $el.ActualHeight))
+        $r.Union($b)
+    }
+    if ($r.IsEmpty) { return $null }
+    $r.Inflate(4, 4)
+    $r
+}
+
+function Set-CanvasAnim($el, $prop, [double]$to, [bool]$animate) {
+    if ($animate -and -not [double]::IsNaN($el.GetValue($prop))) { $el.BeginAnimation($prop, (New-Anim $to 320)) }
+    else { $el.BeginAnimation($prop, $null); $el.SetValue($prop, $to) }
+}
+
+function Show-TourStep([int]$i, [switch]$NoMove) {
+    if ($i -lt 0) { return }
+    if ($i -ge $TourSteps.Count) { Show-TourDone; return }
+    $first = ($TourIdx -lt 0)
+    $script:TourIdx = $i
+    $st = $TourSteps[$i]
+    # bubble content
+    $TourStepTxt.Text = L "Step $($i + 1) of $($TourSteps.Count)"
+    $TourTitle.Text = L $st.Title
+    $TourText.Text = L $st.Text
+    $TourReco.Visibility = $(if ($st.Reco) { 'Visible' } else { 'Collapsed' })
+    $BtnTourBack.IsEnabled = ($i -gt 0)
+    $BtnTourNext.Content = L $(if ($i -eq $TourSteps.Count - 1) { 'Finish' } else { 'Next' })
+    $TourDots.Children.Clear()
+    for ($k = 0; $k -lt $TourSteps.Count; $k++) {
+        $d = New-Object System.Windows.Controls.Border
+        $d.Height = 6; $d.CornerRadius = [System.Windows.CornerRadius]::new(3); $d.Margin = [System.Windows.Thickness]::new(0, 0, 6, 0)
+        $d.Width = $(if ($k -eq $i) { 20 } else { 6 })
+        $d.Background = Get-Brush $(if ($k -eq $i) { '#FF8A1F' } elseif ($k -lt $i) { '#73FF8A1F' } else { '#2A3858' })
+        [void]$TourDots.Children.Add($d)
+    }
+    [void][SBLang]::Apply($TourBubble)
+    if ($NoMove) { return }
+    # open the matching sidebar category, then measure once the accordion animation is done
+    if ($st.Nav) { Select-NavFor $st.Nav } else { Select-NavFor 'NavHome' }
+    $t = New-Object System.Windows.Threading.DispatcherTimer
+    $t.Interval = [TimeSpan]::FromMilliseconds($(if ($first) { 60 } else { 290 }))
+    $t.Tag = @{ First = $first; Idx = $i }
+    $t.Add_Tick({ param($s, $e) $s.Stop(); try { Move-TourSpot $s.Tag.Idx $s.Tag.First } catch { Write-Log "Tour error: $_" } })
+    $t.Start()
+}
+
+function Move-TourSpot([int]$i, [bool]$first) {
+    if ($i -ne $TourIdx -or $TourLayer.Visibility -ne 'Visible') { return }
+    $st = $TourSteps[$i]
+    $TourLayer.UpdateLayout()
+    $r = Get-TourRect $st.Target
+    if (-not $r) { $r = [System.Windows.Rect]::new(($TourLayer.ActualWidth / 2) - 1, 120, 2, 2) }
+    $anim = -not $first
+    # hole in the dim layer
+    if ($anim) {
+        $ra = New-Object System.Windows.Media.Animation.RectAnimation
+        $ra.To = $r; $ra.Duration = [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(320)); $ra.EasingFunction = $Ease
+        $TourHoleGeo.BeginAnimation([System.Windows.Media.RectangleGeometry]::RectProperty, $ra)
+    } else { $TourHoleGeo.Rect = $r }
+    foreach ($ring in @($TourRing, $TourPulse)) {
+        $ring.Visibility = 'Visible'
+        Set-CanvasAnim $ring ([System.Windows.Controls.Canvas]::LeftProperty) $r.X $anim
+        Set-CanvasAnim $ring ([System.Windows.Controls.Canvas]::TopProperty) $r.Y $anim
+        Set-CanvasAnim $ring ([System.Windows.FrameworkElement]::WidthProperty) $r.Width $anim
+        Set-CanvasAnim $ring ([System.Windows.FrameworkElement]::HeightProperty) $r.Height $anim
+    }
+    # bubble next to (or below) the highlighted spot
+    $TourBubble.Visibility = 'Visible'
+    $TourBubble.Measure([System.Windows.Size]::new(360, [double]::PositiveInfinity))
+    $bh = [Math]::Max(150, $TourBubble.DesiredSize.Height)
+    $W = $TourLayer.ActualWidth; $H = $TourLayer.ActualHeight
+    if ($st.Place -eq 'below') {
+        $bx = $r.X + 20; $by = $r.Bottom + 16
+        if ($by + $bh -gt $H - 12) { $by = [Math]::Max(12, $r.Y - $bh - 16) }
+    } else {
+        $bx = $r.Right + 18; $by = $r.Y + $r.Height / 2 - 46
+    }
+    $bx = [Math]::Max(12, [Math]::Min($bx, $W - 372)); $by = [Math]::Max(12, [Math]::Min($by, $H - $bh - 12))
+    Set-CanvasAnim $TourBubble ([System.Windows.Controls.Canvas]::LeftProperty) $bx $anim
+    Set-CanvasAnim $TourBubble ([System.Windows.Controls.Canvas]::TopProperty) $by $anim
+    if ($first) { Invoke-AnimateIn $TourBubble 6 260 }
+}
+
+function Show-TourDone {
+    $TourBubble.Visibility = 'Collapsed'; $TourRing.Visibility = 'Collapsed'; $TourPulse.Visibility = 'Collapsed'
+    $TourDim.Visibility = 'Collapsed'
+    Select-NavFor 'NavHome'
+    $TourDone.Visibility = 'Visible'
+    $TourDone.BeginAnimation([System.Windows.UIElement]::OpacityProperty, (New-Anim 1 220 0 0))
+    Invoke-AnimateIn $TourDoneCard 14 320
+    $sc = New-Object System.Windows.Media.ScaleTransform 0.6, 0.6
+    $TourCheck.RenderTransform = $sc
+    $sc.BeginAnimation([System.Windows.Media.ScaleTransform]::ScaleXProperty, (New-Anim 1 420 200 0.6))
+    $sc.BeginAnimation([System.Windows.Media.ScaleTransform]::ScaleYProperty, (New-Anim 1 420 200 0.6))
+    $k = 0
+    foreach ($c in $TourDoneList.Children) {
+        $tt = New-Object System.Windows.Media.TranslateTransform
+        $c.RenderTransform = $tt
+        $c.BeginAnimation([System.Windows.UIElement]::OpacityProperty, (New-Anim 1 260 (480 + 60 * $k) 0))
+        $tt.BeginAnimation([System.Windows.Media.TranslateTransform]::YProperty, (New-Anim 0 260 (480 + 60 * $k) 6))
+        $k++
+    }
+    [void][SBLang]::Apply($TourDone)
+}
+
+function Register-TourEvents {
+    $BtnHelp.Add_Click({ try { Start-Tour } catch { Write-Log "Tour error: $_" } })
+    $BtnTourAgain.Add_Click({ try { Start-Tour } catch { Write-Log "Tour error: $_" } })
+    $BtnLang.Add_Click({ try { Show-LangMenu } catch { Write-Log "Language error: $_" } })
+    $LangDe.Add_Checked({ if (-not $LangSync) { Set-AppLang 'de' } })
+    $LangEn.Add_Checked({ if (-not $LangSync) { Set-AppLang 'en' } })
+    $TourLangDe.Add_Checked({ if (-not $LangSync) { Set-AppLang 'de' } })
+    $TourLangEn.Add_Checked({ if (-not $LangSync) { Set-AppLang 'en' } })
+    $BtnTourStart.Add_Click({ try { Begin-TourSteps } catch { Write-Log "Tour error: $_"; Close-Tour } })
+    $BtnTourWelcomeSkip.Add_Click({ Close-Tour })
+    $BtnTourSkip.Add_Click({ Close-Tour })
+    $BtnTourBack.Add_Click({ try { Show-TourStep ($TourIdx - 1) } catch { } })
+    $BtnTourNext.Add_Click({ try { Show-TourStep ($TourIdx + 1) } catch { Write-Log "Tour error: $_" } })
+    $BtnTourDoneClose.Add_Click({ Close-Tour -Finished })
+    $BtnTourOpenQuick.Add_Click({
+            Close-Tour -Finished
+            $NavQuick.IsChecked = $true
+            try { $QbComp.IsChecked = $true } catch { } })
+    $Window.Add_SizeChanged({ try { if ($TourBubble.Visibility -eq 'Visible') { Move-TourSpot $TourIdx $true } } catch { } })
+    $Window.Add_PreviewKeyDown({ param($s, $e)
+            if ($TourLayer.Visibility -ne 'Visible') { return }
+            if ($e.Key -eq 'Escape') { $e.Handled = $true; Close-Tour }
+            elseif ($TourBubble.Visibility -eq 'Visible' -and ($e.Key -eq 'Right' -or $e.Key -eq 'Return')) { $e.Handled = $true; Show-TourStep ($TourIdx + 1) }
+            elseif ($TourBubble.Visibility -eq 'Visible' -and $e.Key -eq 'Left') { $e.Handled = $true; Show-TourStep ($TourIdx - 1) } })
+}
+
 # ------------------------------------------------------------------ build window + wire events
 try {
     $script:Window = [System.Windows.Markup.XamlReader]::Parse($Xaml)
@@ -9065,6 +10275,7 @@ try {
         $el = $Window.FindName($nm)
         if ($el) { Set-Variable -Name $nm -Value $el -Scope Script }
     }
+    try { Import-LangData; $lg = [string]$State.misc['Lang']; if (-not $lg) { $lg = Get-DefaultLang }; Set-AppLang $lg -NoSave } catch { Write-Log "Language setup error: $_" }
     $AboutVer.Text = "Version $AppVersion  -  $($Tweaks.Count) optimizations and tools"
     $SideVer.Text = "v$AppVersion  -  FPS Optimizer"
     try {
@@ -9099,6 +10310,7 @@ try {
     $UpdAuto.Add_Click({ $State.misc['AutoUpdate'] = [bool]$UpdAuto.IsChecked; Save-State })
     $NavInput.Add_Checked({ Show-Page 'Input' })
     Register-MacroEvents
+    Register-TourEvents
     $BtnPingTest.Add_Click({ try { Invoke-PingTest } catch { Write-Log "Ping test error: $_"; Hide-Overlay } })
     $BtnPingBoost.Add_Click({ try { Invoke-PingBoost } catch { Write-Log "Ping boost error: $_"; Hide-Overlay } })
     $BtnRoute.Add_Click({ try { Invoke-RouteTest '1.1.1.1' } catch { Write-Log "Route error: $_"; Hide-Overlay } })
@@ -9233,6 +10445,8 @@ try {
             Set-Status "Startup error: $($_.Exception.Message)" 'err'
         }
         Hide-Overlay
+        if ([SBLang]::Lang -eq 'de') { try { [void][SBLang]::Apply($Window) } catch { } }
+        if (-not $State.misc['TourDone']) { try { Start-Tour } catch { Write-Log "Tour error: $_" } }
     })
 
     $Window.Add_Closed({

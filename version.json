@@ -1,12 +1,11 @@
 {
-  "version": "2.3.0",
+  "version": "2.4.0",
   "date": "2026-10-14",
   "url": "https://raw.githubusercontent.com/silvan3004-pixel/silvan-boost/main/SilvanBoost.ps1",
-  "sha256": "9d2069ea99409a113b892865e484e885a7af2667a59a208af19d4075c64bd7b2",
+  "sha256": "65413fd8b2eccbe04e8a3d52353d01d74a44623233320266fb670d9d2353880f",
   "notes": [
-    "New: Macros for mouse and keyboard (Network & Input > Macros) - remap buttons, hotkeys, macro recorder, per-app profiles",
-    "New: detects your mouse and keyboard and shows them (add your own photo with one click)",
-    "Game-safe: in games only 1:1 actions run, so anti-cheat is never triggered",
-    "Game Presets: sharp high-resolution game artwork (2.2)"
+    "New: short beginner tour on first start (skippable, open again with the ? button)",
+    "New: language switch German / English - globe button top right, applies instantly",
+    "Macros for mouse and keyboard with device detection (2.3)"
   ]
 }
