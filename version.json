@@ -1,12 +1,10 @@
 {
-  "version": "2.5.0",
+  "version": "2.5.1",
   "date": "2026-10-14",
   "url": "https://raw.githubusercontent.com/silvan3004-pixel/silvan-boost/main/SilvanBoost.ps1",
-  "sha256": "90b3e96d240d66b9cfc3c01572b5290d4d6e6ff65fb365dc37eb3fab15024134",
+  "sha256": "4ac92455b6f906fe142ce1265ffcb23443078de2491d04ea48ef41453c11edd7",
   "notes": [
-    "New: before/after benchmark with a shareable result image (Gaming > Benchmark)",
-    "New: write pro settings straight into Fortnite, CS2 and Apex (with backup and undo)",
-    "New: auto game mode, tray icon, FPS history per game, driver check, share your setup, report a problem",
-    "Beginner tour and German / English (2.4)"
+    "The Silvan Boost logo now shows in the taskbar, Alt+Tab and the tray instead of the PowerShell icon",
+    "Benchmark, pro settings into the game, auto game mode, tray icon, FPS history, driver check, share setup, report a problem (2.5)"
   ]
 }
